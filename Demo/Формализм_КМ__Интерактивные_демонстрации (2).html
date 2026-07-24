@@ -1,0 +1,720 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Формализм квантовой механики — Интерактивные демонстрации</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>html,body,#root{margin:0;padding:0}</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+const { useState, useRef, useEffect, useCallback, useMemo } = React;
+
+const TH={
+  dark:{bg:"#0a0e17",panel:"#111827",panelBorder:"#1e293b",text:"#e2e8f0",textDim:"#94a3b8",accent:"#22d3ee",accent2:"#a78bfa",accent3:"#f472b6",accent4:"#34d399",warn:"#fbbf24",grid:"#1e293b",axis:"#475569",canvasBg:"#0f172a",trace1:"#22d3ee",trace2:"#f472b6",trace3:"#a78bfa",trace4:"#34d399",trace5:"#fbbf24",btnBg:"#1e293b",sliderTrack:"#334155",sliderThumb:"#22d3ee",shadow:"0 4px 24px rgba(0,0,0,0.5)",dropBg:"#1e293b",dropBorder:"#334155"},
+  light:{bg:"#f8fafc",panel:"#ffffff",panelBorder:"#e2e8f0",text:"#1e293b",textDim:"#64748b",accent:"#0891b2",accent2:"#7c3aed",accent3:"#db2777",accent4:"#059669",warn:"#d97706",grid:"#e2e8f0",axis:"#94a3b8",canvasBg:"#f1f5f9",trace1:"#0891b2",trace2:"#db2777",trace3:"#7c3aed",trace4:"#059669",trace5:"#d97706",btnBg:"#e2e8f0",sliderTrack:"#cbd5e1",sliderThumb:"#0891b2",shadow:"0 4px 24px rgba(0,0,0,0.08)",dropBg:"#ffffff",dropBorder:"#e2e8f0"}
+};
+
+const TABS=[
+  {id:"collapse",label:"1. Измерение и коллапс: проекция"},
+  {id:"dist",label:"2. Две функции распределения |ψ|² и |c|²"},
+  {id:"mz",label:"3. Интерферометр Маха–Цендера"},
+  {id:"bomb",label:"4. Эксперимент Элицура–Вайдмана (бомбы)"},
+  {id:"braket",label:"5. Bra-ket: ⟨φ|ψ⟩ и эрмитово сопряжение"},
+  {id:"comm",label:"6. Коммутатор [Â, B̂]"},
+  {id:"super",label:"7. Суперпозиция: глобальная и относительная фаза"},
+  {id:"evol",label:"8. Эволюция пакета: уравнение Шрёдингера"},
+];
+
+// ── helpers (общие со всей серией) ──
+function Sl({label,value,min,max,step,onChange,theme,unit="",format}){return(<div style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",fontSize:13,color:theme.textDim,marginBottom:3}}><span>{label}</span><span style={{color:theme.accent,fontFamily:"monospace",fontWeight:600}}>{format?format(value):value}{unit}</span></div><input type="range" min={min} max={max} step={step} value={value} onChange={e=>onChange(Number(e.target.value))} style={{width:"100%",height:6,appearance:"none",background:theme.sliderTrack,borderRadius:3,outline:"none",cursor:"pointer",accentColor:theme.sliderThumb}}/></div>)}
+function Info({text,theme}){return <div style={{padding:"10px 14px",borderRadius:8,fontSize:13,lineHeight:1.6,background:theme.accent+"11",border:`1px solid ${theme.accent}33`,color:theme.textDim,marginTop:10}}>{"💡"} {text}</div>}
+function Lb({children}){return <div style={{fontSize:11,marginBottom:4,textTransform:"uppercase",letterSpacing:1,opacity:0.6}}>{children}</div>}
+const cs=(t,h=220)=>({width:"100%",height:h,borderRadius:8,background:t.canvasBg,border:`1px solid ${t.panelBorder}`,display:"block"});
+function su(c){const d=window.devicePixelRatio||1,r=c.getBoundingClientRect();c.width=r.width*d;c.height=r.height*d;const x=c.getContext("2d");x.scale(d,d);return{ctx:x,w:r.width,h:r.height}}
+function gr(ctx,w,h,t){ctx.strokeStyle=t.grid;ctx.lineWidth=0.5;for(let i=0;i<=8;i++){ctx.beginPath();ctx.moveTo((i/8)*w,0);ctx.lineTo((i/8)*w,h);ctx.stroke()}for(let i=0;i<=4;i++){ctx.beginPath();ctx.moveTo(0,(i/4)*h);ctx.lineTo(w,(i/4)*h);ctx.stroke()}}
+function Card({items,theme}){return(<div style={{display:"flex",gap:12,marginBottom:14,justifyContent:"center",flexWrap:"wrap"}}>{items.map((it,i)=>(<div key={i} style={{textAlign:"center",padding:"5px 12px",borderRadius:8,background:it.c+"11",border:`1px solid ${it.c}33`}}><div style={{fontSize:10,color:theme.textDim}}>{it.l}</div><div style={{fontSize:15,fontWeight:700,color:it.c,fontFamily:"monospace"}}>{it.v}</div></div>))}</div>)}
+function arrow2(ctx,x0,y0,x1,y1,col,w){ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=w||1.4;ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();const a=Math.atan2(y1-y0,x1-x0),hh=8;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x1-hh*Math.cos(a-0.4),y1-hh*Math.sin(a-0.4));ctx.lineTo(x1-hh*Math.cos(a+0.4),y1-hh*Math.sin(a+0.4));ctx.closePath();ctx.fill();}
+function Btn({onClick,children,theme,active,color}){const c=color||theme.accent;return <button onClick={onClick} style={{padding:"8px 14px",borderRadius:8,border:`1px solid ${active?c:theme.panelBorder}`,background:active?c+"22":theme.btnBg,color:active?c:theme.text,cursor:"pointer",fontSize:13,fontWeight:600,transition:"all .15s"}}>{children}</button>}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 1. ИЗМЕРЕНИЕ И КОЛЛАПС: проекция ψ на собственные векторы
+// ═══════════════════════════════════════════════════════════════════════
+function CollapseTab({theme}){
+  const[theta,setTheta]=useState(35);        // подготовка состояния, град
+  const[collapsed,setCollapsed]=useState(null); // null | 0 | 1
+  const[counts,setCounts]=useState([0,0]);
+  const cRef=useRef(null), hRef=useRef(null);
+  const a1=+1, a2=-1;
+  const th=theta*Math.PI/180;
+  const c1sq=Math.cos(th)**2, c2sq=Math.sin(th)**2;
+
+  const measure=useCallback(()=>{
+    setCollapsed(prev=>{
+      if(prev!==null) return prev;           // уже сколлапсировало → тот же исход
+      const out=Math.random()<c1sq?0:1;
+      setCounts(k=>{const n=[...k];n[out]++;return n});
+      return out;
+    });
+  },[c1sq]);
+  const measureMany=useCallback(()=>{
+    setCounts(k=>{let[n1,n2]=k;for(let i=0;i<200;i++){if(Math.random()<c1sq)n1++;else n2++;}return [n1,n2];});
+    setCollapsed(null);
+  },[c1sq]);
+  const reset=()=>{setCollapsed(null)};
+  const clearHist=()=>{setCounts([0,0]);setCollapsed(null)};
+
+  const draw=useCallback(()=>{
+    if(!cRef.current)return;const c=su(cRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const cx=c.w/2,cy=c.h/2,R=Math.min(c.w,c.h)*0.36;
+    // оси собственных векторов |a1> (гориз.) и |a2> (верт.)
+    x.strokeStyle=theme.axis;x.lineWidth=1;
+    x.beginPath();x.moveTo(cx-R*1.25,cy);x.lineTo(cx+R*1.25,cy);x.stroke();
+    x.beginPath();x.moveTo(cx,cy+R*1.25);x.lineTo(cx,cy-R*1.25);x.stroke();
+    arrow2(x,cx,cy,cx+R,cy,theme.trace1,2);
+    arrow2(x,cx,cy,cx,cy-R,theme.trace2,2);
+    x.fillStyle=theme.trace1;x.font="bold 13px monospace";x.textAlign="left";x.fillText("|a₁⟩  (a₁=+1)",cx+R*0.55,cy+18);
+    x.fillStyle=theme.trace2;x.textAlign="center";x.fillText("|a₂⟩ (a₂=−1)",cx+2,cy-R-8);
+    // вектор состояния
+    const ang=collapsed===null?th:(collapsed===0?0:Math.PI/2);
+    const vx=cx+R*Math.cos(ang), vy=cy-R*Math.sin(ang);
+    // проекции (пунктир)
+    x.strokeStyle=theme.textDim;x.setLineDash([4,4]);x.lineWidth=1;
+    x.beginPath();x.moveTo(vx,vy);x.lineTo(vx,cy);x.stroke();
+    x.beginPath();x.moveTo(vx,vy);x.lineTo(cx,vy);x.stroke();x.setLineDash([]);
+    const col=collapsed===null?theme.accent:(collapsed===0?theme.trace1:theme.trace2);
+    arrow2(x,cx,cy,vx,vy,col,3);
+    x.fillStyle=col;x.font="bold 14px monospace";x.textAlign="left";
+    x.fillText(collapsed===null?"|ψ⟩":"коллапс → "+(collapsed===0?"|a₁⟩":"|a₂⟩"),vx+6,vy-6);
+  },[theta,collapsed,theme,th]);
+
+  const drawHist=useCallback(()=>{
+    if(!hRef.current)return;const c=su(hRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const N=counts[0]+counts[1];const mB=26,mT=14,W=c.w,H=c.h-mB-mT;
+    const f1=N?counts[0]/N:0, f2=N?counts[1]/N:0;
+    const bw=W*0.18, gap=W*0.14, x0=W*0.5-bw-gap/2;
+    const bars=[{f:f1,th:c1sq,col:theme.trace1,lab:"a₁=+1"},{f:f2,th:c2sq,col:theme.trace2,lab:"a₂=−1"}];
+    bars.forEach((b,i)=>{const bx=x0+i*(bw+gap);
+      // теория (контур)
+      x.strokeStyle=b.col;x.setLineDash([5,4]);x.lineWidth=1.5;x.strokeRect(bx,mT+(1-b.th)*H,bw,b.th*H);x.setLineDash([]);
+      // эксперимент (заливка)
+      x.fillStyle=b.col+"66";x.fillRect(bx,mT+(1-b.f)*H,bw,b.f*H);
+      x.strokeStyle=b.col;x.lineWidth=1.5;x.strokeRect(bx,mT+(1-b.f)*H,bw,b.f*H);
+      x.fillStyle=b.col;x.font="bold 12px monospace";x.textAlign="center";
+      x.fillText(b.lab,bx+bw/2,mT+H+16);
+      x.fillStyle=theme.text;x.fillText((b.f*100).toFixed(0)+"%",bx+bw/2,mT+(1-b.f)*H-5);
+    });
+    x.fillStyle=theme.textDim;x.font="11px monospace";x.textAlign="right";x.fillText("N = "+N,W-6,mT+10);
+    x.textAlign="left";x.fillText("заливка — опыт, пунктир — |cₖ|²",6,mT+10);
+  },[counts,c1sq,c2sq,theme]);
+
+  useEffect(()=>{draw();drawHist();const h=()=>{draw();drawHist()};window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h)},[draw,drawHist]);
+
+  return(<div>
+    <p style={{fontSize:14,color:theme.textDim,marginBottom:16,lineHeight:1.6}}>Постулаты 2–3. У произвольного состояния <b>|ψ⟩</b> величина <b>A</b> не определена. При измерении ψ <i>случайно проецируется</i> на один из собственных векторов оператора Â — это и есть <b>коллапс</b>. Вероятность исхода aₖ равна <b>|cₖ|²</b> — квадрату проекции. Готовьте состояние ползунком, жмите «Измерить» и набирайте статистику.</p>
+
+    <Sl label="θ — подготовка состояния (угол ψ к |a₁⟩)" value={theta} min={0} max={90} step={1} onChange={v=>{setTheta(v);setCollapsed(null)}} theme={theme} unit="°"/>
+
+    <Card items={[
+      {l:"|c₁|² = cos²θ",v:(c1sq*100).toFixed(0)+"%",c:theme.trace1},
+      {l:"|c₂|² = sin²θ",v:(c2sq*100).toFixed(0)+"%",c:theme.trace2},
+      {l:"Состояние",v:collapsed===null?"суперпозиция":"собственное",c:collapsed===null?theme.accent:theme.accent4},
+      {l:"Сумма",v:"|c₁|²+|c₂|² = 1",c:theme.warn},
+    ]} theme={theme}/>
+
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
+      <Btn onClick={measure} theme={theme} color={theme.accent}>Измерить</Btn>
+      <Btn onClick={measure} theme={theme} color={theme.accent4} active={collapsed!==null}>Измерить ещё раз (тот же момент)</Btn>
+      <Btn onClick={measureMany} theme={theme} color={theme.accent2}>+200 измерений</Btn>
+      <Btn onClick={reset} theme={theme}>Подготовить заново</Btn>
+      <Btn onClick={clearHist} theme={theme} color={theme.trace2}>Сброс статистики</Btn>
+    </div>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      <div><Lb>Проекция вектора состояния на собственные оси</Lb><canvas ref={cRef} style={cs(theme,280)}/></div>
+      <div><Lb>Статистика исходов vs теория |cₖ|²</Lb><canvas ref={hRef} style={cs(theme,280)}/></div>
+    </div>
+
+    {collapsed!==null && <Info theme={theme} text={"Состояние уже собственное (|a"+(collapsed+1)+"⟩). Повторное измерение в тот же момент времени даёт ровно тот же результат — ψ ортогонально остальным собственным векторам, других компонент у него нет. Это иллюстрирует вопрос из лекции: «измерили дважды подряд — что будет?» Ответ: то же самое."}/>}
+    <Info theme={theme} text={"Гистограмма набирается медленно — за один эксперимент мы видим один случайный исход, а всё распределение проявляется только при многократном повторении с одинаково приготовленным ψ. Это принципиальный недостаток квантового эксперимента. Куда именно сколлапсирует ψ в конкретный раз — абсолютно случайно (детерминировано лишь распределение). На плоскости показаны 2 исхода; в общем случае их сколько угодно — идея проекции та же."}/>
+  </div>);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 2. ДВЕ ФУНКЦИИ РАСПРЕДЕЛЕНИЯ: |ψ(x)|² против |cₖ|²
+// ═══════════════════════════════════════════════════════════════════════
+function DistTab({theme}){
+  const[x0,setX0]=useState(0.5);   // центр пакета (доли L)
+  const[sig,setSig]=useState(0.10);// ширина (доли L)
+  const[k0,setK0]=useState(40);    // средний волновой вектор
+  const[obs,setObs]=useState("x"); // x | p | E
+  const pRef=useRef(null), dRef=useRef(null);
+  const L=1, NG=512;
+
+  // сетка ψ(x) = exp(-(x-x0)^2/(4σ^2)) e^{i k0 x}, нормировка
+  const grid=useMemo(()=>{
+    const xs=new Float64Array(NG),re=new Float64Array(NG),im=new Float64Array(NG);
+    let norm=0;const dx=L/NG;
+    for(let i=0;i<NG;i++){const x=(i+0.5)*dx;xs[i]=x;const env=Math.exp(-((x-x0)**2)/(4*sig*sig));re[i]=env*Math.cos(k0*x);im[i]=env*Math.sin(k0*x);norm+=(env*env)*dx;}
+    const s=1/Math.sqrt(norm);for(let i=0;i<NG;i++){re[i]*=s;im[i]*=s;}
+    return {xs,re,im,dx};
+  },[x0,sig,k0]);
+
+  // распределение по энергии в ящике: cn = ∫ ψ(x)·√(2/L) sin(nπx/L) dx
+  const eDist=useMemo(()=>{
+    const NM=22,out=[];let tot=0;
+    for(let n=1;n<=NM;n++){let cr=0,ci=0;const A=Math.sqrt(2/L);
+      for(let i=0;i<NG;i++){const ph=A*Math.sin(n*Math.PI*grid.xs[i]/L);cr+=grid.re[i]*ph*grid.dx;ci+=grid.im[i]*ph*grid.dx;}
+      const p=cr*cr+ci*ci;out.push(p);tot+=p;}
+    return out.map(p=>p/(tot||1));
+  },[grid]);
+
+  const drawPsi=useCallback(()=>{
+    if(!pRef.current)return;const c=su(pRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const mB=24,mT=12,mL=10,mR=10,W=c.w-mL-mR,H=c.h-mB-mT;
+    let mx=0;for(let i=0;i<NG;i++){const p=grid.re[i]**2+grid.im[i]**2;if(p>mx)mx=p;}
+    const X=u=>mL+u*W, Y=p=>mT+(1-p/(mx||1))*H;
+    x.strokeStyle=theme.axis;x.lineWidth=1;x.beginPath();x.moveTo(mL,mT+H);x.lineTo(mL+W,mT+H);x.stroke();
+    // |ψ|^2 заливка
+    x.fillStyle=theme.accent+"33";x.strokeStyle=theme.accent;x.lineWidth=2;x.beginPath();x.moveTo(X(0),Y(0));
+    for(let i=0;i<NG;i++){x.lineTo(X(grid.xs[i]/L),Y(grid.re[i]**2+grid.im[i]**2));}
+    x.lineTo(X(1),Y(0));x.closePath();x.fill();x.stroke();
+    x.fillStyle=theme.textDim;x.font="11px monospace";x.textAlign="left";x.fillText("|ψ(x)|² — плотность вероятности найти частицу",mL+4,mT+10);
+    x.textAlign="center";x.fillText("0",X(0),mT+H+15);x.fillText("L",X(1),mT+H+15);x.fillText("x",X(0.5),mT+H+15);
+  },[grid,theme]);
+
+  const drawDist=useCallback(()=>{
+    if(!dRef.current)return;const c=su(dRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const mB=26,mT=12,mL=10,mR=10,W=c.w-mL-mR,H=c.h-mB-mT;
+    x.strokeStyle=theme.axis;x.lineWidth=1;x.beginPath();x.moveTo(mL,mT+H);x.lineTo(mL+W,mT+H);x.stroke();
+    if(obs==="x"){
+      let mx=0;for(let i=0;i<NG;i++){const p=grid.re[i]**2+grid.im[i]**2;if(p>mx)mx=p;}
+      const X=u=>mL+u*W, Y=p=>mT+(1-p/(mx||1))*H;
+      x.fillStyle=theme.trace4+"33";x.strokeStyle=theme.trace4;x.lineWidth=2;x.beginPath();x.moveTo(X(0),Y(0));
+      for(let i=0;i<NG;i++){x.lineTo(X(grid.xs[i]/L),Y(grid.re[i]**2+grid.im[i]**2));}x.lineTo(X(1),Y(0));x.closePath();x.fill();x.stroke();
+      x.fillStyle=theme.trace4;x.font="11px monospace";x.textAlign="left";x.fillText("P(координата) — то же |ψ(x)|² (спектр непрерывный)",mL+4,mT+10);
+    } else if(obs==="p"){
+      // гаусс по импульсам: центр k0, ширина ~ 1/(2σ)  (в единицах k)
+      const kc=k0, kw=1/(2*sig*L); const kmin=Math.max(0,kc-3.4*kw), kmax=kc+3.4*kw;
+      const X=k=>mL+((k-kmin)/(kmax-kmin))*W, Y=p=>mT+(1-p)*H;
+      x.fillStyle=theme.trace3+"33";x.strokeStyle=theme.trace3;x.lineWidth=2;x.beginPath();x.moveTo(X(kmin),Y(0));
+      for(let i=0;i<=300;i++){const k=kmin+(kmax-kmin)*i/300;const v=Math.exp(-((k-kc)**2)/(2*kw*kw));x.lineTo(X(k),Y(v));}
+      x.lineTo(X(kmax),Y(0));x.closePath();x.fill();x.stroke();
+      x.strokeStyle=theme.warn;x.setLineDash([4,4]);x.beginPath();x.moveTo(X(kc),mT);x.lineTo(X(kc),mT+H);x.stroke();x.setLineDash([]);
+      x.fillStyle=theme.trace3;x.font="11px monospace";x.textAlign="left";x.fillText("P(импульс)=|φ(p)|² — гаусс шириной ~ħ/2σ (непрерывный)",mL+4,mT+10);
+      x.fillStyle=theme.warn;x.textAlign="center";x.fillText("p₀=ħk₀",X(kc),mT+H+16);
+    } else {
+      // дискретный спектр энергий в ящике
+      const NM=eDist.length;const mx=Math.max(...eDist,1e-6);
+      const bw=W/NM*0.7, step=W/NM;
+      const Y=p=>mT+(1-p/mx)*H;
+      eDist.forEach((p,i)=>{const bx=mL+i*step+step*0.15;
+        x.fillStyle=theme.accent2+"77";x.fillRect(bx,Y(p),bw,mT+H-Y(p));
+        x.strokeStyle=theme.accent2;x.lineWidth=1;x.strokeRect(bx,Y(p),bw,mT+H-Y(p));
+        if(i<8||p>mx*0.08){x.fillStyle=theme.textDim;x.font="9px monospace";x.textAlign="center";x.fillText(i+1,bx+bw/2,mT+H+14);}
+      });
+      x.fillStyle=theme.accent2;x.font="11px monospace";x.textAlign="left";x.fillText("P(энергия)=|cₙ|² — дискретные уровни Eₙ∝n² (спектр дискретный)",mL+4,mT+10);
+      x.fillStyle=theme.textDim;x.textAlign="right";x.fillText("n →",mL+W-2,mT+H+14);
+    }
+  },[grid,eDist,obs,k0,sig,theme]);
+
+  useEffect(()=>{drawPsi();drawDist();const h=()=>{drawPsi();drawDist()};window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h)},[drawPsi,drawDist]);
+
+  return(<div>
+    <p style={{fontSize:14,color:theme.textDim,marginBottom:16,lineHeight:1.6}}>Лектор отдельно подчёркивает: <b>|ψ(x)|²</b> и распределение результатов измерения — <i>разные</i> функции. Первая — вероятность <b>найти частицу</b> в точке x. Вторая — вероятность <b>измерить значение</b> наблюдаемой. Для одной и той же ψ выберите наблюдаемую и сравните распределения вверху и внизу.</p>
+
+    <div style={{display:"flex",gap:10,marginBottom:12,flexWrap:"wrap"}}>
+      <Btn onClick={()=>setObs("x")} theme={theme} color={theme.trace4} active={obs==="x"}>Координата x̂</Btn>
+      <Btn onClick={()=>setObs("p")} theme={theme} color={theme.trace3} active={obs==="p"}>Импульс p̂</Btn>
+      <Btn onClick={()=>setObs("E")} theme={theme} color={theme.accent2} active={obs==="E"}>Энергия Ĥ (в ящике)</Btn>
+    </div>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:6}}>
+      <Sl label="x₀ — центр" value={x0} min={0.2} max={0.8} step={0.01} onChange={setX0} theme={theme} format={v=>v.toFixed(2)}/>
+      <Sl label="σ — ширина" value={sig} min={0.04} max={0.22} step={0.005} onChange={setSig} theme={theme} format={v=>v.toFixed(3)}/>
+      <Sl label="k₀ — средний волновой вектор" value={k0} min={0} max={80} step={1} onChange={setK0} theme={theme}/>
+    </div>
+
+    <div><Lb>Сверху всегда: вероятность найти частицу |ψ(x)|²</Lb><canvas ref={pRef} style={cs(theme,180)}/></div>
+    <div style={{marginTop:10}}><Lb>Снизу: распределение результатов измерения выбранной величины</Lb><canvas ref={dRef} style={cs(theme,200)}/></div>
+
+    <Info theme={theme} text={"Сужайте σ — пик |ψ(x)|² становится у́же (точнее знаем координату), а распределение по импульсу тут же расплывается (это соотношение неопределённостей). Двигайте k₀ — форма |ψ(x)|² почти не меняется, но импульсный пик уезжает: положение и импульс — разные наблюдаемые с разными распределениями. У энергии в ящике спектр дискретный — отсюда бары |cₙ|² вместо непрерывной кривой; это иллюстрирует различие дискретного и непрерывного спектра из лекции."}/>
+  </div>);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 3. ИНТЕРФЕРОМЕТР МАХА–ЦЕНДЕРА (квантовый)
+// ═══════════════════════════════════════════════════════════════════════
+function MZTab({theme}){
+  const[phi,setPhi]=useState(60);   // разность фаз, град
+  const[classical,setClassical]=useState(false);
+  const sRef=useRef(null), gRef=useRef(null);
+  const ph=phi*Math.PI/180;
+  const pD1=classical?0.5:Math.cos(ph/2)**2;
+  const pD2=classical?0.5:Math.sin(ph/2)**2;
+
+  const drawScheme=useCallback(()=>{
+    if(!sRef.current)return;const c=su(sRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);
+    const W=c.w,H=c.h, L=W*0.16,Rr=W*0.78, T=H*0.28,B=H*0.74;
+    const bs=(px,py)=>{x.save();x.translate(px,py);x.rotate(Math.PI/4);x.fillStyle=theme.accent+"55";x.strokeStyle=theme.accent;x.lineWidth=2;x.fillRect(-16,-3,32,6);x.strokeRect(-16,-3,32,6);x.restore();};
+    const mir=(px,py)=>{x.save();x.translate(px,py);x.rotate(Math.PI/4);x.fillStyle=theme.textDim;x.fillRect(-15,-2.5,30,5);x.restore();};
+    // ход лучей
+    x.strokeStyle=theme.trace1;x.lineWidth=2;
+    x.beginPath();x.moveTo(W*0.02,B);x.lineTo(L,B);x.stroke();              // вход
+    x.beginPath();x.moveTo(L,B);x.lineTo(Rr,B);x.stroke();                  // нижнее плечо
+    x.beginPath();x.moveTo(L,B);x.lineTo(L,T);x.stroke();                   // верхнее плечо (вверх)
+    x.beginPath();x.moveTo(L,T);x.lineTo(Rr,T);x.stroke();                  // верх к BS2
+    x.beginPath();x.moveTo(Rr,B);x.lineTo(Rr,T);x.stroke();                 // в BS2 снизу
+    x.beginPath();x.moveTo(Rr,T);x.lineTo(W*0.96,T);x.stroke();             // к D1
+    x.beginPath();x.moveTo(Rr,T);x.lineTo(Rr,H*0.06);x.stroke();            // к D2
+    bs(L,B);mir(L,T);mir(Rr,B);bs(Rr,T);
+    // фазовый элемент в верхнем плече
+    x.fillStyle=theme.warn+"33";x.strokeStyle=theme.warn;x.lineWidth=1.5;x.fillRect((L+Rr)/2-14,T-9,28,18);x.strokeRect((L+Rr)/2-14,T-9,28,18);
+    x.fillStyle=theme.warn;x.font="bold 11px monospace";x.textAlign="center";x.fillText("Δφ",(L+Rr)/2,T-13);
+    // детекторы
+    const det=(px,py,p,lab,col)=>{x.fillStyle=col+( "33");x.strokeStyle=col;x.lineWidth=2;x.beginPath();x.arc(px,py,13+8*p,0,2*Math.PI);x.fill();x.stroke();x.fillStyle=col;x.font="bold 12px monospace";x.textAlign="center";x.fillText(lab,px,py+4);};
+    det(W*0.96,T,pD1,"D1",theme.accent4);
+    det(Rr,H*0.06,pD2,"D2",theme.trace2);
+    x.fillStyle=theme.textDim;x.font="11px monospace";x.textAlign="left";x.fillText("фотон →",W*0.02,B-8);
+    x.fillStyle=theme.accent;x.fillText("BS1",L-10,B+22);x.fillText("BS2",Rr-10,T+22);
+  },[pD1,pD2,theme]);
+
+  const drawGraph=useCallback(()=>{
+    if(!gRef.current)return;const c=su(gRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const mB=26,mT=14,mL=34,mR=12,W=c.w-mL-mR,H=c.h-mB-mT;
+    const X=p=>mL+(p/(2*Math.PI))*W, Y=v=>mT+(1-v)*H;
+    x.strokeStyle=theme.axis;x.lineWidth=1;x.beginPath();x.moveTo(mL,mT+H);x.lineTo(mL+W,mT+H);x.stroke();x.beginPath();x.moveTo(mL,mT);x.lineTo(mL,mT+H);x.stroke();
+    x.fillStyle=theme.textDim;x.font="10px monospace";x.textAlign="center";[0,Math.PI,2*Math.PI].forEach((v,i)=>x.fillText(["0","π","2π"][i],X(v),mT+H+15));
+    x.textAlign="right";x.fillText("1",mL-5,Y(1)+3);x.fillText("0",mL-5,Y(0)+3);x.textAlign="center";x.fillText("Δφ",mL+W/2,mT+H+15);
+    if(classical){
+      x.strokeStyle=theme.trace5;x.lineWidth=2.4;x.setLineDash([6,4]);x.beginPath();x.moveTo(X(0),Y(0.5));x.lineTo(X(2*Math.PI),Y(0.5));x.stroke();x.setLineDash([]);
+      x.fillStyle=theme.trace5;x.font="bold 11px monospace";x.textAlign="left";x.fillText("классика: P=½ всегда (нет зависимости от Δφ)",X(0.1),Y(0.5)-6);
+    } else {
+      x.strokeStyle=theme.accent4;x.lineWidth=2.4;x.beginPath();for(let i=0;i<=240;i++){const p=2*Math.PI*i/240;x.lineTo(X(p),Y(Math.cos(p/2)**2));}x.stroke();
+      x.strokeStyle=theme.trace2;x.lineWidth=2.4;x.beginPath();for(let i=0;i<=240;i++){const p=2*Math.PI*i/240;x.lineTo(X(p),Y(Math.sin(p/2)**2));}x.stroke();
+      x.fillStyle=theme.accent4;x.font="bold 11px monospace";x.textAlign="left";x.fillText("D1: cos²(Δφ/2)",X(0.1),Y(0.95));
+      x.fillStyle=theme.trace2;x.fillText("D2: sin²(Δφ/2)",X(3.3),Y(0.95));
+    }
+    // текущая точка
+    x.fillStyle=theme.accent4;x.beginPath();x.arc(X(ph),Y(pD1),5,0,2*Math.PI);x.fill();
+    x.fillStyle=theme.trace2;x.beginPath();x.arc(X(ph),Y(pD2),5,0,2*Math.PI);x.fill();
+    x.strokeStyle=theme.textDim;x.setLineDash([3,3]);x.beginPath();x.moveTo(X(ph),mT);x.lineTo(X(ph),mT+H);x.stroke();x.setLineDash([]);
+  },[ph,pD1,pD2,classical,theme]);
+
+  useEffect(()=>{drawScheme();drawGraph();const h=()=>{drawScheme();drawGraph()};window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h)},[drawScheme,drawGraph]);
+
+  return(<div>
+    <p style={{fontSize:14,color:theme.textDim,marginBottom:16,lineHeight:1.6}}>Фотон по одному входит в интерферометр. Светоделитель BS даёт суперпозицию двух путей; разность хода даёт набег фазы <b>Δφ</b>; второй светоделитель их сводит. По лекции вероятности на детекторах — <b>cos²(Δφ/2)</b> и <b>sin²(Δφ/2)</b>. Включите режим «классическая частица», чтобы увидеть контраст: тогда ответ — плоские ½, независимо от путей.</p>
+
+    <Sl label="Δφ — набег фазы (разность оптических путей)" value={phi} min={0} max={360} step={2} onChange={setPhi} theme={theme} unit="°"/>
+    <div style={{marginBottom:12}}><Btn onClick={()=>setClassical(!classical)} theme={theme} color={theme.trace5} active={classical}>{classical?"Режим: классическая частица":"Режим: квантовый фотон"}</Btn></div>
+
+    <Card items={[
+      {l:"P(D1)",v:(pD1*100).toFixed(0)+"%",c:theme.accent4},
+      {l:"P(D2)",v:(pD2*100).toFixed(0)+"%",c:theme.trace2},
+      {l:"Сумма",v:((pD1+pD2)*100).toFixed(0)+"%",c:theme.warn},
+      {l:"Картина",v:classical?"константа":"интерференция",c:classical?theme.trace5:theme.accent},
+    ]} theme={theme}/>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      <div><Lb>Схема: BS₁ → плечи (Δφ) → BS₂ → детекторы</Lb><canvas ref={sRef} style={cs(theme,260)}/></div>
+      <div><Lb>Вероятности детекторов vs Δφ</Lb><canvas ref={gRef} style={cs(theme,260)}/></div>
+    </div>
+
+    <Info theme={theme} text={"Светоделитель — это унитарный оператор R = (1/√2)[[1,i],[i,1]]; набег фазы — оператор Z, обмен плеч на зеркале — оператор M. Их произведение и даёт cos²/sin². Главное: классически фотон идёт по одному пути, и интенсивность на детекторе была бы постоянной (½) при любом Δφ. Опыт Аспе показал, что верна квантовая картина — детекторы «дышат» по cos² и sin². Меняя Δφ, видно, как вероятность перетекает между D1 и D2."}/>
+  </div>);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 4. ЭКСПЕРИМЕНТ ЭЛИЦУРА–ВАЙДМАНА (бомбы)
+// ═══════════════════════════════════════════════════════════════════════
+function BombTab({theme}){
+  const[tally,setTally]=useState({boom:0,found:0,undet:0});
+  const[rounds,setRounds]=useState(6);    // итерации переопроса
+  const bRef=useRef(null), gRef=useRef(null);
+
+  const runBatch=useCallback((nb)=>{
+    let boom=0,found=0,undet=0;
+    for(let i=0;i<nb;i++){const r=Math.random();if(r<0.5)boom++;else if(r<0.75)found++;else undet++;}
+    setTally(t=>({boom:t.boom+boom,found:t.found+found,undet:t.undet+undet}));
+  },[]);
+  const clear=()=>setTally({boom:0,found:0,undet:0});
+  const N=tally.boom+tally.found+tally.undet;
+
+  // итеративная схема: доля рабочих бомб, опознанных без взрыва
+  const cumFound=useMemo(()=>{let pool=1,found=0;const arr=[0];for(let r=0;r<rounds;r++){found+=pool*0.25;pool*=0.25;arr.push(found);}return arr;},[rounds]);
+
+  const drawBars=useCallback(()=>{
+    if(!bRef.current)return;const c=su(bRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const mB=30,mT=14,W=c.w,H=c.h-mB-mT;
+    const data=[{f:N?tally.boom/N:0,th:0.5,col:theme.trace2,lab:"взорвана"},{f:N?tally.found/N:0,th:0.25,col:theme.accent4,lab:"опознана"},{f:N?tally.undet/N:0,th:0.25,col:theme.warn,lab:"неясно"}];
+    const bw=W*0.16,gap=W*0.10,x0=W*0.5-1.5*bw-gap;
+    data.forEach((b,i)=>{const bx=x0+i*(bw+gap);
+      x.strokeStyle=b.col;x.setLineDash([5,4]);x.lineWidth=1.5;x.strokeRect(bx,mT+(1-b.th)*H,bw,b.th*H);x.setLineDash([]);
+      x.fillStyle=b.col+"66";x.fillRect(bx,mT+(1-b.f)*H,bw,b.f*H);x.strokeStyle=b.col;x.lineWidth=1.5;x.strokeRect(bx,mT+(1-b.f)*H,bw,b.f*H);
+      x.fillStyle=b.col;x.font="bold 12px monospace";x.textAlign="center";x.fillText(b.lab,bx+bw/2,mT+H+16);
+      x.fillStyle=theme.text;x.fillText((b.f*100).toFixed(1)+"%",bx+bw/2,mT+(1-b.f)*H-5);
+      x.fillStyle=theme.textDim;x.font="9px monospace";x.fillText("(теор. "+(b.th*100)+"%)",bx+bw/2,mT+H+28);
+    });
+    x.fillStyle=theme.textDim;x.font="11px monospace";x.textAlign="right";x.fillText("обработано: "+N,W-6,mT+10);
+  },[tally,N,theme]);
+
+  const drawGeo=useCallback(()=>{
+    if(!gRef.current)return;const c=su(gRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const mB=26,mT=14,mL=34,mR=12,W=c.w-mL-mR,H=c.h-mB-mT;
+    const X=r=>mL+(r/Math.max(1,cumFound.length-1))*W, Y=v=>mT+(1-v/0.4)*H;
+    x.strokeStyle=theme.axis;x.lineWidth=1;x.beginPath();x.moveTo(mL,mT+H);x.lineTo(mL+W,mT+H);x.stroke();x.beginPath();x.moveTo(mL,mT);x.lineTo(mL,mT+H);x.stroke();
+    // предел 1/3
+    x.strokeStyle=theme.accent;x.setLineDash([6,4]);x.lineWidth=1.5;x.beginPath();x.moveTo(mL,Y(1/3));x.lineTo(mL+W,Y(1/3));x.stroke();x.setLineDash([]);
+    x.fillStyle=theme.accent;x.font="bold 11px monospace";x.textAlign="left";x.fillText("предел 1/3 ≈ 33.3%",mL+6,Y(1/3)-6);
+    // кривая накопления
+    x.strokeStyle=theme.accent4;x.lineWidth=2.4;x.beginPath();cumFound.forEach((v,i)=>{const xx=X(i),yy=Y(v);if(i===0)x.moveTo(xx,yy);else x.lineTo(xx,yy)});x.stroke();
+    cumFound.forEach((v,i)=>{x.fillStyle=theme.accent4;x.beginPath();x.arc(X(i),Y(v),3.5,0,2*Math.PI);x.fill()});
+    x.fillStyle=theme.textDim;x.font="10px monospace";x.textAlign="center";x.fillText("раунды переопроса →",mL+W/2,mT+H+16);
+    x.textAlign="right";x.fillText("40%",mL-4,Y(0.4)+3);x.fillText("0",mL-4,Y(0)+3);
+    x.fillStyle=theme.accent4;x.textAlign="left";x.fillText("опознано: "+(cumFound[cumFound.length-1]*100).toFixed(1)+"%",mL+6,mT+12);
+  },[cumFound,theme]);
+
+  useEffect(()=>{drawBars();drawGeo();const h=()=>{drawBars();drawGeo()};window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h)},[drawBars,drawGeo]);
+
+  return(<div>
+    <p style={{fontSize:14,color:theme.textDim,marginBottom:16,lineHeight:1.6}}>Сверхчувствительная бомба взрывается от одного фотона. Кладём её в одно плечо интерферометра (настроенного так, что без бомбы щёлкает только D1). С <b>рабочей</b> бомбой: 50% — взрыв, 25% — щёлкнул <b>D2</b> (бомба точно рабочая и <i>не взорвалась</i>!), 25% — щёлкнул D1 (неясно). Это <b>измерение без взаимодействия</b> — невозможное в классике.</p>
+
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>
+      <Btn onClick={()=>runBatch(50)} theme={theme} color={theme.accent}>Запустить 50 бомб</Btn>
+      <Btn onClick={()=>runBatch(1000)} theme={theme} color={theme.accent2}>Запустить 1000 бомб</Btn>
+      <Btn onClick={clear} theme={theme} color={theme.trace2}>Сброс</Btn>
+    </div>
+
+    <Card items={[
+      {l:"Взорвано",v:N?((tally.boom/N)*100).toFixed(1)+"%":"—",c:theme.trace2},
+      {l:"Опознано (без взрыва)",v:N?((tally.found/N)*100).toFixed(1)+"%":"—",c:theme.accent4},
+      {l:"Неопределённость",v:N?((tally.undet/N)*100).toFixed(1)+"%":"—",c:theme.warn},
+      {l:"Бомб обработано",v:N,c:theme.accent},
+    ]} theme={theme}/>
+
+    <div><Lb>Один прогон: исходы для рабочих бомб (опыт vs теория 50/25/25)</Lb><canvas ref={bRef} style={cs(theme,210)}/></div>
+
+    <div style={{marginTop:14}}>
+      <Sl label="Раунды переопроса неопознанных бомб" value={rounds} min={1} max={14} step={1} onChange={setRounds} theme={theme}/>
+      <Lb>Итеративная схема: неопознанные бомбы прогоняем снова и снова</Lb><canvas ref={gRef} style={cs(theme,200)}/>
+    </div>
+
+    <Info theme={theme} text={"Неопознанные бомбы (D1) можно прогнать ещё раз: каждый раунд опознаёт ¼ оставшихся, ¼ снова уходит в неопределённость. Сумма геометрической прогрессии ¼ + ¼·¼ + … = 1/3. То есть максимум ⅓ рабочих бомб можно сохранить и подтвердить их работоспособность — это и есть ответ к домашней задаче из лекции. Усложнённая схема Квята с дроблением поляризации доводит долю почти до 100%. Тут на каждой бомбе явно происходит коллапс (взрыв или нет — это измерение)."}/>
+  </div>);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 5. BRA-KET: скалярное произведение и эрмитово сопряжение
+// ═══════════════════════════════════════════════════════════════════════
+const PHI_PRESETS=[
+  {key:"e0",lab:"|0⟩=(1,0)",v:[[1,0],[0,0]]},
+  {key:"e1",lab:"|1⟩=(0,1)",v:[[0,0],[1,0]]},
+  {key:"plus",lab:"(1,1)/√2",v:[[1/Math.SQRT2,0],[1/Math.SQRT2,0]]},
+  {key:"ci",lab:"(1,i)/√2",v:[[1/Math.SQRT2,0],[0,1/Math.SQRT2]]},
+  {key:"cmi",lab:"(1,−i)/√2",v:[[1/Math.SQRT2,0],[0,-1/Math.SQRT2]]},
+];
+function BraketTab({theme}){
+  const[ar,setAr]=useState(0.7),[ai,setAi]=useState(0.2),[br,setBr]=useState(0.1),[bi,setBi]=useState(0.6);
+  const[phiKey,setPhiKey]=useState("ci");
+  const pRef=useRef(null);
+  const phi=PHI_PRESETS.find(p=>p.key===phiKey).v;
+  // нормировка ψ
+  const nrm=Math.hypot(ar,ai,br,bi)||1;
+  const psi=[[ar/nrm,ai/nrm],[br/nrm,bi/nrm]];
+  // ⟨φ|ψ⟩ = Σ conj(φ_i)·ψ_i
+  let ipr=0,ipi=0;
+  for(let i=0;i<2;i++){const cr=phi[i][0],ci=-phi[i][1];const pr=psi[i][0],pi=psi[i][1];ipr+=cr*pr-ci*pi;ipi+=cr*pi+ci*pr;}
+  const ipAbs2=ipr*ipr+ipi*ipi;
+  const fmt=(re,im)=>{const s=im>=0?"+":"−";return re.toFixed(2)+" "+s+" "+Math.abs(im).toFixed(2)+"i";};
+
+  const draw=useCallback(()=>{
+    if(!pRef.current)return;const c=su(pRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);
+    const half=c.w/2;
+    [0,1].forEach(col=>{const cx=half*(col+0.5),cy=c.h/2,R=Math.min(half,c.h)*0.36;
+      gr(x,c.w,c.h,theme);
+      x.strokeStyle=theme.axis;x.lineWidth=1;x.beginPath();x.moveTo(cx-R*1.2,cy);x.lineTo(cx+R*1.2,cy);x.stroke();x.beginPath();x.moveTo(cx,cy-R*1.2);x.lineTo(cx,cy+R*1.2);x.stroke();
+      // ψ компонент
+      const pr=psi[col][0],pi=psi[col][1];
+      arrow2(x,cx,cy,cx+pr*R,cy-pi*R,theme.accent,2.4);
+      // φ компонент
+      const fr=phi[col][0],fi=phi[col][1];
+      arrow2(x,cx,cy,cx+fr*R,cy-fi*R,theme.trace2,1.6);
+      x.fillStyle=theme.textDim;x.font="11px monospace";x.textAlign="center";x.fillText("компонента "+col+" (Re→, Im↑)",cx,cy+R*1.15+12);
+    });
+    x.fillStyle=theme.accent;x.font="bold 11px monospace";x.textAlign="left";x.fillText("ψ",10,16);
+    x.fillStyle=theme.trace2;x.fillText("φ",30,16);
+  },[psi,phi,theme]);
+  useEffect(()=>{draw();const h=()=>draw();window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h)},[draw]);
+
+  const mono={fontFamily:"monospace",fontSize:13};
+  return(<div>
+    <p style={{fontSize:14,color:theme.textDim,marginBottom:16,lineHeight:1.6}}>В обозначениях Дирака <b>|ψ⟩</b> — кет (столбец), <b>⟨ψ|</b> — бра (строка). Бра получается из кета <b>эрмитовым сопряжением</b> †: транспонирование + комплексное сопряжение. Скалярное произведение <b>⟨φ|ψ⟩</b> — комплексное число; если |φ⟩ — собственный вектор, то <b>|⟨φ|ψ⟩|²</b> — вероятность исхода. Задайте кет ползунками и выберите φ.</p>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:6}}>
+      <Sl label="Re ψ₀" value={ar} min={-1} max={1} step={0.02} onChange={setAr} theme={theme} format={v=>v.toFixed(2)}/>
+      <Sl label="Im ψ₀" value={ai} min={-1} max={1} step={0.02} onChange={setAi} theme={theme} format={v=>v.toFixed(2)}/>
+      <Sl label="Re ψ₁" value={br} min={-1} max={1} step={0.02} onChange={setBr} theme={theme} format={v=>v.toFixed(2)}/>
+      <Sl label="Im ψ₁" value={bi} min={-1} max={1} step={0.02} onChange={setBi} theme={theme} format={v=>v.toFixed(2)}/>
+    </div>
+
+    <div style={{marginBottom:12}}><Lb>Выбор |φ⟩ (ортонормированные базисы из лекции)</Lb>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>{PHI_PRESETS.map(p=><Btn key={p.key} onClick={()=>setPhiKey(p.key)} theme={theme} color={theme.trace2} active={phiKey===p.key}>{p.lab}</Btn>)}</div>
+    </div>
+
+    <div style={{background:theme.canvasBg,border:`1px solid ${theme.panelBorder}`,borderRadius:8,padding:14,marginBottom:12,...mono,lineHeight:1.9,color:theme.text}}>
+      <div><span style={{color:theme.accent}}>|ψ⟩</span> = ({fmt(psi[0][0],psi[0][1])} ; {fmt(psi[1][0],psi[1][1])})ᵀ&nbsp;&nbsp;<span style={{color:theme.textDim}}>(нормировано)</span></div>
+      <div><span style={{color:theme.accent}}>⟨ψ|</span> = (ψ†) = [{fmt(psi[0][0],-psi[0][1])} , {fmt(psi[1][0],-psi[1][1])}]&nbsp;&nbsp;<span style={{color:theme.textDim}}>(строка, сопряжённая)</span></div>
+      <div><span style={{color:theme.trace2}}>⟨φ|ψ⟩</span> = <b style={{color:theme.warn}}>{fmt(ipr,ipi)}</b></div>
+      <div><span style={{color:theme.accent4}}>|⟨φ|ψ⟩|²</span> = <b style={{color:theme.accent4}}>{ipAbs2.toFixed(3)}</b> &nbsp;<span style={{color:theme.textDim}}>— вероятность исхода, если φ — собственный вектор</span></div>
+    </div>
+
+    <div><Lb>Фазоры компонент: ψ (яркая) и φ (тонкая) в комплексной плоскости</Lb><canvas ref={pRef} style={cs(theme,200)}/></div>
+
+    <Info theme={theme} text={"Возьмите |φ⟩=(1,i)/√2 и (1,−i)/√2 — это ортонормированный комплексный базис: ⟨(1,i)|(1,−i)⟩ = 0, а норма каждого равна 1. Проверьте: для базисного φ величина |⟨φ|ψ⟩|² — это в точности |cₖ|² из постулатов измерения, и по всем базисным φ они в сумме дают 1. Эрмитово сопряжение и есть та операция (транспонировать + сопрячь), что переводит кет в бра."}/>
+  </div>);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 6. КОММУТАТОР [Â, B̂]
+// ═══════════════════════════════════════════════════════════════════════
+const COMM_PAIRS=[
+  {key:"dx_x", lab:"[ d/dx , x ]",  res:"1 (единичный)",  AB:(k)=>`(k+1)·xᵏ`, BA:(k)=>`k·xᵏ`, com:(k)=>`xᵏ`,
+    f:(x,k)=>Math.pow(x,k), af:(x,k)=>(k+1)*Math.pow(x,k), bf:(x,k)=>k*Math.pow(x,k), cf:(x,k)=>Math.pow(x,k)},
+  {key:"dx_x2",lab:"[ d/dx , x² ]", res:"2x",            AB:(k)=>`(k+2)·xᵏ⁺¹`, BA:(k)=>`k·xᵏ⁺¹`, com:(k)=>`2·xᵏ⁺¹`,
+    f:(x,k)=>Math.pow(x,k), af:(x,k)=>(k+2)*Math.pow(x,k+1), bf:(x,k)=>k*Math.pow(x,k+1), cf:(x,k)=>2*Math.pow(x,k+1)},
+  {key:"d2_x", lab:"[ d²/dx² , x ]",res:"2·d/dx",        AB:(k)=>`k(k+1)·xᵏ⁻¹`, BA:(k)=>`k(k−1)·xᵏ⁻¹`, com:(k)=>`2k·xᵏ⁻¹`,
+    f:(x,k)=>Math.pow(x,k), af:(x,k)=>k*(k+1)*Math.pow(x,Math.max(0,k-1)), bf:(x,k)=>k*(k-1)*Math.pow(x,Math.max(0,k-1)), cf:(x,k)=>2*k*Math.pow(x,Math.max(0,k-1))},
+];
+function CommTab({theme}){
+  const[pairKey,setPairKey]=useState("dx_x");
+  const[k,setK]=useState(3);
+  const cRef=useRef(null);
+  const P=COMM_PAIRS.find(p=>p.key===pairKey);
+
+  const draw=useCallback(()=>{
+    if(!cRef.current)return;const c=su(cRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const mB=24,mT=12,mL=30,mR=12,W=c.w-mL-mR,H=c.h-mB-mT;
+    const xmin=0,xmax=1.6;
+    let ymax=1e-6;const samp=[];
+    for(let i=0;i<=200;i++){const xx=xmin+(xmax-xmin)*i/200;const ab=P.af(xx,k),ba=P.bf(xx,k),cm=P.cf(xx,k);samp.push([xx,ab,ba,cm]);ymax=Math.max(ymax,Math.abs(ab),Math.abs(ba),Math.abs(cm));}
+    const X=u=>mL+((u-xmin)/(xmax-xmin))*W, Y=v=>mT+(1-v/ymax)*H;
+    x.strokeStyle=theme.axis;x.lineWidth=1;x.beginPath();x.moveTo(mL,mT+H);x.lineTo(mL+W,mT+H);x.stroke();x.beginPath();x.moveTo(mL,mT);x.lineTo(mL,mT+H);x.stroke();
+    const plot=(idx,col,wid)=>{x.strokeStyle=col;x.lineWidth=wid;x.beginPath();samp.forEach((s,i)=>{const xx=X(s[0]),yy=Y(Math.max(0,s[idx]));if(i===0)x.moveTo(xx,yy);else x.lineTo(xx,yy)});x.stroke();};
+    plot(1,theme.trace1,2);   // Â B̂
+    plot(2,theme.trace2,2);   // B̂ Â
+    plot(3,theme.accent4,2.6);// [Â,B̂]
+    x.fillStyle=theme.trace1;x.font="bold 11px monospace";x.textAlign="left";x.fillText("Â(B̂ xᵏ)",mL+6,mT+12);
+    x.fillStyle=theme.trace2;x.fillText("B̂(Â xᵏ)",mL+6,mT+26);
+    x.fillStyle=theme.accent4;x.fillText("[Â,B̂] xᵏ",mL+6,mT+40);
+    x.fillStyle=theme.textDim;x.textAlign="center";x.fillText("x",mL+W/2,mT+H+15);
+  },[P,k,theme]);
+  useEffect(()=>{draw();const h=()=>draw();window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h)},[draw]);
+
+  const mono={fontFamily:"monospace",fontSize:14};
+  return(<div>
+    <p style={{fontSize:14,color:theme.textDim,marginBottom:16,lineHeight:1.6}}>Операторы в общем случае <b>не коммутируют</b>: порядок применения важен. Считаем коммутатор <b>[Â,B̂] = ÂB̂ − B̂Â</b> на одночлене xᵏ — ровно как в начале лекции. Меняйте пару операторов и степень k.</p>
+
+    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:12}}>{COMM_PAIRS.map(p=><Btn key={p.key} onClick={()=>setPairKey(p.key)} theme={theme} active={pairKey===p.key}>{p.lab}</Btn>)}</div>
+    <Sl label="k — степень одночлена xᵏ" value={k} min={1} max={6} step={1} onChange={setK} theme={theme}/>
+
+    <div style={{background:theme.canvasBg,border:`1px solid ${theme.panelBorder}`,borderRadius:8,padding:14,margin:"6px 0 12px",...mono,lineHeight:2,color:theme.text}}>
+      <div><span style={{color:theme.trace1}}>ÂB̂ xᵏ</span> = {P.AB(k)}</div>
+      <div><span style={{color:theme.trace2}}>B̂Â xᵏ</span> = {P.BA(k)}</div>
+      <div><span style={{color:theme.accent4}}>[Â,B̂] xᵏ</span> = {P.com(k)} &nbsp;⟹&nbsp; <b style={{color:theme.warn}}>[Â,B̂] = {P.res}</b></div>
+    </div>
+
+    <div><Lb>Результаты двух порядков и их разность (коммутатор)</Lb><canvas ref={cRef} style={cs(theme,240)}/></div>
+
+    <Info theme={theme} text={"Для [d/dx, x] коммутатор не зависит от k и равен единичному оператору — это и есть смысл «коммутатор = 1». Отсюда главный мостик в квантовую механику: оператор импульса p̂ = −iħ·d/dx, поэтому [x̂, p̂] = iħ·1 — каноническое коммутационное соотношение, из которого растёт соотношение неопределённостей. Случаи [d/dx, x²]=2x и [d²/dx², x]=2·d/dx — это домашние задачи из лекции."}/>
+  </div>);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 7. СУПЕРПОЗИЦИЯ: глобальная и относительная фаза
+// ═══════════════════════════════════════════════════════════════════════
+function SuperTab({theme}){
+  const[t1,setT1]=useState(30),[t2,setT2]=useState(150),[glob,setGlob]=useState(0);
+  const[a1,setA1]=useState(1),[a2,setA2]=useState(1);
+  const phRef=useRef(null), gRef=useRef(null);
+  const th1=(t1+glob)*Math.PI/180, th2=(t2+glob)*Math.PI/180, rel=(t1-t2)*Math.PI/180;
+  const sumRe=a1*Math.cos(th1)+a2*Math.cos(th2), sumIm=a1*Math.sin(th1)+a2*Math.sin(th2);
+  const P=a1*a1+a2*a2+2*a1*a2*Math.cos(rel);
+
+  const drawPh=useCallback(()=>{
+    if(!phRef.current)return;const c=su(phRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const cx=c.w/2,cy=c.h/2,R=Math.min(c.w,c.h)*0.20;
+    x.strokeStyle=theme.axis;x.lineWidth=1;x.beginPath();x.moveTo(cx-R*2,cy);x.lineTo(cx+R*2,cy);x.stroke();x.beginPath();x.moveTo(cx,cy-R*2);x.lineTo(cx,cy+R*2);x.stroke();
+    const v1x=cx+a1*R*Math.cos(th1), v1y=cy-a1*R*Math.sin(th1);
+    arrow2(x,cx,cy,v1x,v1y,theme.trace1,2.4);
+    arrow2(x,v1x,v1y,v1x+a2*R*Math.cos(th2),v1y-a2*R*Math.sin(th2),theme.trace2,2.4); // tip-to-tail
+    arrow2(x,cx,cy,cx+sumRe*R,cy-sumIm*R,theme.accent4,3);
+    x.fillStyle=theme.trace1;x.font="bold 11px monospace";x.textAlign="left";x.fillText("ψ₁",v1x+4,v1y);
+    x.fillStyle=theme.accent4;x.fillText("ψ₁+ψ₂",cx+sumRe*R+4,cy-sumIm*R);
+  },[th1,th2,a1,a2,sumRe,sumIm,theme]);
+
+  const drawG=useCallback(()=>{
+    if(!gRef.current)return;const c=su(gRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const mB=26,mT=14,mL=30,mR=12,W=c.w-mL-mR,H=c.h-mB-mT;
+    const Pmax=(a1+a2)**2||1;
+    const X=d=>mL+((d+180)/360)*W, Y=v=>mT+(1-v/Pmax)*H;
+    x.strokeStyle=theme.axis;x.lineWidth=1;x.beginPath();x.moveTo(mL,mT+H);x.lineTo(mL+W,mT+H);x.stroke();x.beginPath();x.moveTo(mL,mT);x.lineTo(mL,mT+H);x.stroke();
+    x.strokeStyle=theme.accent;x.lineWidth=2.4;x.beginPath();for(let i=0;i<=240;i++){const d=-180+360*i/240;const v=a1*a1+a2*a2+2*a1*a2*Math.cos(d*Math.PI/180);x.lineTo(X(d),Y(v))}x.stroke();
+    const dRel=t1-t2;x.fillStyle=theme.accent4;x.beginPath();x.arc(X(((dRel+540)%360)-180),Y(P),5,0,2*Math.PI);x.fill();
+    x.fillStyle=theme.textDim;x.font="10px monospace";x.textAlign="center";[-180,0,180].forEach(d=>x.fillText(d+"°",X(d),mT+H+15));
+    x.fillText("относительная фаза θ₁−θ₂",mL+W/2,mT+H+15+0);
+    x.fillStyle=theme.accent;x.textAlign="left";x.fillText("|ψ₁+ψ₂|² (интерференция)",mL+6,mT+12);
+  },[a1,a2,t1,t2,P,theme]);
+
+  useEffect(()=>{drawPh();drawG();const h=()=>{drawPh();drawG()};window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h)},[drawPh,drawG]);
+
+  return(<div>
+    <p style={{fontSize:14,color:theme.textDim,marginBottom:16,lineHeight:1.6}}>В суперпозиции вероятность даёт <b>интерференционный член</b>: |ψ₁+ψ₂|² = |ψ₁|²+|ψ₂|²+2·Re(ψ₁*ψ₂). Ключ из лекции: <b>общая фаза ненаблюдаема</b> (двигайте «общую фазу» — модуль суммы не меняется), а <b>относительная</b> фаза θ₁−θ₂ управляет интерференцией.</p>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:6}}>
+      <Sl label="θ₁ — фаза первого состояния" value={t1} min={0} max={360} step={2} onChange={setT1} theme={theme} unit="°"/>
+      <Sl label="θ₂ — фаза второго состояния" value={t2} min={0} max={360} step={2} onChange={setT2} theme={theme} unit="°"/>
+      <Sl label="a₁ — амплитуда" value={a1} min={0.2} max={1.5} step={0.05} onChange={setA1} theme={theme} format={v=>v.toFixed(2)}/>
+      <Sl label="a₂ — амплитуда" value={a2} min={0.2} max={1.5} step={0.05} onChange={setA2} theme={theme} format={v=>v.toFixed(2)}/>
+    </div>
+    <Sl label="Общая фаза (сдвигает оба состояния сразу)" value={glob} min={0} max={360} step={2} onChange={setGlob} theme={theme} unit="°"/>
+
+    <Card items={[
+      {l:"Относит. фаза θ₁−θ₂",v:(t1-t2)+"°",c:theme.warn},
+      {l:"Интерф. член 2a₁a₂cos",v:(2*a1*a2*Math.cos((t1-t2)*Math.PI/180)).toFixed(2),c:theme.accent3},
+      {l:"|ψ₁+ψ₂|²",v:P.toFixed(2),c:theme.accent4},
+      {l:"Общая фаза влияет?",v:"нет",c:theme.accent},
+    ]} theme={theme}/>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      <div><Lb>Фазоры: ψ₁ + ψ₂ = сумма (зелёная)</Lb><canvas ref={phRef} style={cs(theme,240)}/></div>
+      <div><Lb>|ψ₁+ψ₂|² от относительной фазы</Lb><canvas ref={gRef} style={cs(theme,240)}/></div>
+    </div>
+
+    <Info theme={theme} text={"Крутите «общую фазу»: оба фазора поворачиваются вместе, сумма поворачивается, но её длина (значит и вероятность) не меняется — общую фазу нельзя пронаблюдать. А вот относительная фаза θ₁−θ₂ двигает интерференционный член от +2a₁a₂ (конструктивно) до −2a₁a₂ (деструктивно). Важное отличие от классики: здесь это одна частица в суперпозиции двух состояний, а не две разные волны — именно так электрон «интерферирует сам с собой»."}/>
+  </div>);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 8. ЭВОЛЮЦИЯ ПАКЕТА: уравнение Шрёдингера (свободная частица)
+// ═══════════════════════════════════════════════════════════════════════
+function EvolTab({theme}){
+  const[sig0,setSig0]=useState(0.6),[k0,setK0]=useState(7),[t,setT]=useState(0),[playing,setPlaying]=useState(true),[speed,setSpeed]=useState(1);
+  const cRef=useRef(null), raf=useRef(0), last=useRef(0);
+  // ħ=m=1: групповая скорость vg=k0, фазовая vp=ω/k=k0/2 (ω=k²/2)
+  const st=sig0*Math.sqrt(1+(t/(2*sig0*sig0))**2);    // ширина |ψ| в момент t
+  const xc=k0*t;                                        // центр (групповая)
+  const vp=k0/2;
+
+  const draw=useCallback(()=>{
+    if(!cRef.current)return;const c=su(cRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const mB=24,mT=12,mL=10,mR=10,W=c.w-mL-mR,H=c.h-mB-mT,midY=mT+H*0.55;
+    const xmin=-6,xmax=14;
+    const X=u=>mL+((u-xmin)/(xmax-xmin))*W;
+    x.strokeStyle=theme.axis;x.lineWidth=1;x.beginPath();x.moveTo(mL,midY);x.lineTo(mL+W,midY);x.stroke();
+    const amp0=1/Math.sqrt(st*Math.sqrt(2*Math.PI));   // макс. амплитуды (нормировка)
+    const sc=H*0.40/ (1/Math.sqrt(sig0*Math.sqrt(2*Math.PI))); // масштаб под начальную высоту
+    // огибающая ±|ψ|
+    x.strokeStyle=theme.accent2;x.setLineDash([4,3]);x.lineWidth=1.2;
+    for(const sgn of [1,-1]){x.beginPath();for(let i=0;i<=400;i++){const u=xmin+(xmax-xmin)*i/400;const env=amp0*Math.exp(-((u-xc)**2)/(4*st*st));x.lineTo(X(u),midY-sgn*env*sc);}x.stroke();}
+    x.setLineDash([]);
+    // Re(ψ): несущая под огибающей, фаза бежит со скоростью vp
+    x.strokeStyle=theme.accent;x.lineWidth=2;x.beginPath();
+    for(let i=0;i<=700;i++){const u=xmin+(xmax-xmin)*i/700;const env=amp0*Math.exp(-((u-xc)**2)/(4*st*st));const re=env*Math.cos(k0*(u-vp*t));x.lineTo(X(u),midY-re*sc);}
+    x.stroke();
+    // |ψ|^2 снизу
+    const baseY=mT+H;x.strokeStyle=theme.accent4;x.lineWidth=1.8;x.fillStyle=theme.accent4+"22";x.beginPath();x.moveTo(X(xmin),baseY);
+    for(let i=0;i<=400;i++){const u=xmin+(xmax-xmin)*i/400;const env=amp0*Math.exp(-((u-xc)**2)/(4*st*st));x.lineTo(X(u),baseY-(env*env)*sc*sc*1.6);}
+    x.lineTo(X(xmax),baseY);x.closePath();x.fill();x.stroke();
+    // центр (vg) и метки
+    x.strokeStyle=theme.warn;x.setLineDash([3,3]);x.beginPath();x.moveTo(X(xc),mT);x.lineTo(X(xc),baseY);x.stroke();x.setLineDash([]);
+    x.fillStyle=theme.accent;x.font="11px monospace";x.textAlign="left";x.fillText("Re ψ(x,t)",mL+4,mT+10);
+    x.fillStyle=theme.accent4;x.fillText("|ψ|²",mL+4,baseY-6);
+    x.fillStyle=theme.warn;x.textAlign="center";x.fillText("центр (vg)",X(xc),mT+10);
+    x.fillStyle=theme.textDim;x.textAlign="right";x.fillText("x →",mL+W-2,midY-6);
+  },[sig0,k0,t,theme,st,xc,vp]);
+
+  useEffect(()=>{draw()},[draw]);
+  useEffect(()=>{
+    if(!playing){cancelAnimationFrame(raf.current);return;}
+    last.current=performance.now();
+    const loop=(now)=>{const dt=(now-last.current)/1000;last.current=now;setT(p=>{let n=p+dt*speed*2.2;if(n>6.5)n=0;return n;});raf.current=requestAnimationFrame(loop);};
+    raf.current=requestAnimationFrame(loop);
+    return ()=>cancelAnimationFrame(raf.current);
+  },[playing,speed]);
+
+  return(<div>
+    <p style={{fontSize:14,color:theme.textDim,marginBottom:16,lineHeight:1.6}}>Постулат 4: эволюция задаётся <b>уравнением Шрёдингера</b> iħ·∂ψ/∂t = Ĥψ. Для свободной частицы волновой пакет <b>движется и расплывается</b>. Огибающая (|ψ|) едет с групповой скоростью, несущая внутри — с фазовой (vₚ = v_g/2). Площадь под |ψ|² сохраняется — нормировка не теряется. (Единицы ħ=m=1.)</p>
+
+    <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12,alignItems:"center"}}>
+      <Btn onClick={()=>setPlaying(!playing)} theme={theme} color={theme.accent4} active={playing}>{playing?"⏸ Пауза":"▶ Пуск"}</Btn>
+      <Btn onClick={()=>{setT(0)}} theme={theme}>⟲ Сброс t=0</Btn>
+    </div>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:6}}>
+      <Sl label="σ₀ — начальная ширина" value={sig0} min={0.3} max={1.4} step={0.05} onChange={v=>{setSig0(v)}} theme={theme} format={v=>v.toFixed(2)}/>
+      <Sl label="k₀ — средний импульс (=vg)" value={k0} min={2} max={14} step={0.5} onChange={setK0} theme={theme} format={v=>v.toFixed(1)}/>
+      <Sl label="скорость анимации" value={speed} min={0.2} max={3} step={0.1} onChange={setSpeed} theme={theme} format={v=>v.toFixed(1)}/>
+    </div>
+    <Sl label="t — время (при паузе можно листать вручную)" value={t} min={0} max={6.5} step={0.02} onChange={v=>{setPlaying(false);setT(v)}} theme={theme} format={v=>v.toFixed(2)}/>
+
+    <Card items={[
+      {l:"Ширина σ(t)",v:st.toFixed(2),c:theme.accent2},
+      {l:"Центр x_c=v_g·t",v:xc.toFixed(2),c:theme.warn},
+      {l:"Групповая v_g",v:k0.toFixed(1),c:theme.accent4},
+      {l:"Фазовая v_p=v_g/2",v:vp.toFixed(1),c:theme.accent},
+    ]} theme={theme}/>
+
+    <div><Lb>Re ψ(x,t) под огибающей |ψ|, снизу — |ψ(x,t)|²</Lb><canvas ref={cRef} style={cs(theme,260)}/></div>
+
+    <Info theme={theme} text={"Уже узкий пакет (маленькое σ₀) расплывается быстрее — это снова неопределённость: точная начальная локализация требует широкого набора импульсов, и они «разъезжаются». Несущая (фаза) внутри пакета бежит вдвое медленнее самого пакета — классическое различие фазовой и групповой скоростей. Плоская волна де Бройля e^{i(kx−ωt)} — собственное состояние оператора импульса и предельный случай бесконечно широкого пакета; подстановка её в уравнение и есть способ «угадать» уравнение Шрёдингера, предложенный в лекции."}/>
+  </div>);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+function App(){
+  const[themeKey,setThemeKey]=useState("dark"),[tab,setTab]=useState("collapse"),[menuOpen,setMenuOpen]=useState(false);
+  const t=TH[themeKey],cur=TABS.find(tb=>tb.id===tab);
+  return(
+    <div data-theme={themeKey} style={{minHeight:"100vh",background:t.bg,color:t.text,fontFamily:"'Segoe UI','Noto Sans',system-ui,sans-serif",transition:"background 0.3s",padding:"20px 16px"}}>
+      <style>{`input[type=range]::-webkit-slider-thumb{appearance:none;width:14px;height:14px;border-radius:50%;background:${t.sliderThumb};cursor:pointer;box-shadow:0 0 6px ${t.sliderThumb}88}input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;border:none;background:${t.sliderThumb};cursor:pointer}*{box-sizing:border-box}::selection{background:${t.accent}44}select{outline:none}`}</style>
+      <div style={{maxWidth:960,margin:"0 auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div><h1 style={{fontSize:22,fontWeight:700,margin:0}}>{"⚛️"} Формализм квантовой механики</h1><div style={{fontSize:12,color:t.textDim,marginTop:2}}>Лекция 3 · 8 демонстраций</div></div>
+          <button onClick={()=>setThemeKey(themeKey==="dark"?"light":"dark")} style={{padding:"6px 14px",borderRadius:20,border:`1px solid ${t.panelBorder}`,background:t.btnBg,color:t.text,cursor:"pointer",fontSize:13}}>{themeKey==="dark"?"☀ Светлая":"🌙 Тёмная"}</button>
+        </div>
+        <div style={{position:"relative",marginBottom:20}}>
+          <button onClick={()=>setMenuOpen(!menuOpen)} style={{width:"100%",padding:"12px 18px",borderRadius:10,border:`1px solid ${t.dropBorder}`,background:t.dropBg,color:t.text,cursor:"pointer",fontSize:15,fontWeight:600,display:"flex",justifyContent:"space-between",alignItems:"center",boxShadow:t.shadow}}>
+            <span><span style={{color:t.accent,marginRight:8}}>▸</span>{cur?.label}</span>
+            <span style={{color:t.textDim,fontSize:12,transform:menuOpen?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.2s"}}>▼</span>
+          </button>
+          {menuOpen&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,zIndex:100,background:t.dropBg,border:`1px solid ${t.dropBorder}`,borderRadius:10,boxShadow:t.shadow,overflow:"hidden"}}>
+            {TABS.map(tb=><button key={tb.id} onClick={()=>{setTab(tb.id);setMenuOpen(false)}} style={{width:"100%",padding:"11px 18px",border:"none",cursor:"pointer",background:tab===tb.id?t.accent+"22":"transparent",color:tab===tb.id?t.accent:t.text,fontSize:14,fontWeight:tab===tb.id?700:400,textAlign:"left",display:"block"}}>{tb.label}</button>)}
+          </div>}
+        </div>
+        {menuOpen&&<div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setMenuOpen(false)}/>}
+        <div style={{background:t.panel,borderRadius:14,padding:24,border:`1px solid ${t.panelBorder}`,boxShadow:t.shadow}}>
+          {tab==="collapse"&&<CollapseTab theme={t}/>}
+          {tab==="dist"&&<DistTab theme={t}/>}
+          {tab==="mz"&&<MZTab theme={t}/>}
+          {tab==="bomb"&&<BombTab theme={t}/>}
+          {tab==="braket"&&<BraketTab theme={t}/>}
+          {tab==="comm"&&<CommTab theme={t}/>}
+          {tab==="super"&&<SuperTab theme={t}/>}
+          {tab==="evol"&&<EvolTab theme={t}/>}
+        </div>
+        <div style={{textAlign:"center",fontSize:11,color:t.textDim,marginTop:16,opacity:0.6}}>Лекция 3 · Формализм квантовой механики · Innopolis 2025</div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(App));
+  </script>
+</body>
+</html>

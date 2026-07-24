@@ -1,0 +1,1020 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Спин и сложные атомы — Интерактивные демонстрации</title>
+  <meta name="description" content="9 интерактивных демонстраций по квантовой механике спина и сложных атомов: гиромагнитное отношение и магнетоны, опыт Эйнштейна–де Гааза, опыт Штерна–Герлаха, сложение моментов (векторная модель, сетка проекций, L·S), тонкая и сверхтонкая структура водорода, тождественность частиц и принцип Паули, обменное взаимодействие, заполнение оболочек и правила Хунда.">
+  <link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'&gt;&lt;text y='28' font-size='28'&gt;%E2%9A%9B%EF%B8%8F&lt;/text&gt;&lt;/svg&gt;">
+  <style>
+    * { margin: 0; padding: 0; }
+    body { overflow-x: hidden; }
+    #root { min-height: 100vh; }
+  </style>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const THEMES = {
+  dark: {
+    bg: "#0a0e17", panel: "#111827", panelBorder: "#1e293b",
+    text: "#e2e8f0", textDim: "#94a3b8", accent: "#22d3ee",
+    accent2: "#a78bfa", accent3: "#f472b6", accent4: "#34d399",
+    warn: "#fbbf24", grid: "#1e293b", axis: "#475569",
+    canvasBg: "#0f172a", trace1: "#22d3ee", trace2: "#f472b6",
+    trace3: "#a78bfa", trace4: "#34d399", trace5: "#fbbf24",
+    btnBg: "#1e293b", sliderTrack: "#334155", sliderThumb: "#22d3ee",
+    shadow: "0 4px 24px rgba(0,0,0,0.5)",
+    dropBg: "#1e293b", dropBorder: "#334155"
+  },
+  light: {
+    bg: "#f8fafc", panel: "#ffffff", panelBorder: "#e2e8f0",
+    text: "#1e293b", textDim: "#64748b", accent: "#0891b2",
+    accent2: "#7c3aed", accent3: "#db2777", accent4: "#059669",
+    warn: "#d97706", grid: "#e2e8f0", axis: "#94a3b8",
+    canvasBg: "#f1f5f9", trace1: "#0891b2", trace2: "#db2777",
+    trace3: "#7c3aed", trace4: "#059669", trace5: "#d97706",
+    btnBg: "#e2e8f0", sliderTrack: "#cbd5e1", sliderThumb: "#0891b2",
+    shadow: "0 4px 24px rgba(0,0,0,0.08)",
+    dropBg: "#ffffff", dropBorder: "#e2e8f0"
+  }
+};
+
+const TABS = [
+  { id: "gyro", label: "1. Гиромагнитное отношение" },
+  { id: "edh", label: "2. Опыт Эйнштейна–де Гааза" },
+  { id: "sg", label: "3. Опыт Штерна–Герлаха" },
+  { id: "addvec", label: "4. Сложение моментов: векторная модель" },
+  { id: "addgrid", label: "5. Сложение моментов: проекции и L·S" },
+  { id: "fine", label: "6. Тонкая и сверхтонкая структура" },
+  { id: "pauli", label: "7. Тождественность и принцип Паули" },
+  { id: "exchange", label: "8. Обменное взаимодействие" },
+  { id: "aufbau", label: "9. Заполнение оболочек и правила Хунда" },
+];
+
+// ─── Shared UI ──────────────────────────────────────────────────────
+function Slider({ label, value, min, max, step, onChange, theme, unit = "", format }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: theme.textDim, marginBottom: 3 }}>
+        <span>{label}</span>
+        <span style={{ color: theme.accent, fontFamily: "monospace", fontWeight: 600 }}>{format ? format(value) : value}{unit}</span>
+      </div>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(Number(e.target.value))}
+        style={{ width: "100%", height: 6, appearance: "none", background: theme.sliderTrack, borderRadius: 3, outline: "none", cursor: "pointer", accentColor: theme.sliderThumb }} />
+    </div>
+  );
+}
+function InfoBox({ text, theme }) {
+  return <div style={{ padding: "10px 14px", borderRadius: 8, fontSize: 13, lineHeight: 1.6, background: theme.accent + "11", border: `1px solid ${theme.accent}33`, color: theme.textDim, marginTop: 10 }}>💡 {text}</div>;
+}
+const cs = (t, h = 220) => ({ width: "100%", height: h, borderRadius: 8, background: t.canvasBg, border: `1px solid ${t.panelBorder}`, display: "block" });
+
+function setup(c) {
+  const d = window.devicePixelRatio || 1, r = c.getBoundingClientRect();
+  c.width = r.width * d; c.height = r.height * d;
+  const x = c.getContext("2d"); x.scale(d, d);
+  return { ctx: x, w: r.width, h: r.height };
+}
+function grid(ctx, w, h, t, rows = 4, cols = 8) {
+  ctx.strokeStyle = t.grid; ctx.lineWidth = 0.5;
+  for (let i = 0; i <= cols; i++) { ctx.beginPath(); ctx.moveTo((i / cols) * w, 0); ctx.lineTo((i / cols) * w, h); ctx.stroke(); }
+  for (let i = 0; i <= rows; i++) { ctx.beginPath(); ctx.moveTo(0, (i / rows) * h); ctx.lineTo(w, (i / rows) * h); ctx.stroke(); }
+}
+function arrow2(ctx, x1, y1, x2, y2, color, lw, head = 8) {
+  const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy);
+  if (len < 1) return;
+  const ux = dx / len, uy = dy / len;
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = lw;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - head * ux + head * 0.45 * uy, y2 - head * uy - head * 0.45 * ux);
+  ctx.lineTo(x2 - head * ux - head * 0.45 * uy, y2 - head * uy + head * 0.45 * ux);
+  ctx.closePath(); ctx.fill();
+}
+function StatRow({ items, theme }) {
+  return (
+    <div style={{ display: "flex", gap: 12, marginBottom: 14, justifyContent: "center", flexWrap: "wrap" }}>
+      {items.map((it, i) => (
+        <div key={i} style={{ textAlign: "center", padding: "6px 14px", borderRadius: 8, background: it.c + "11", border: `1px solid ${it.c}33`, minWidth: 70 }}>
+          <div style={{ fontSize: 11, color: theme.textDim }}>{it.l}</div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: it.c, fontFamily: "monospace" }}>{it.v}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Physics / math helpers ─────────────────────────────────────────
+const LSYM = ["S", "P", "D", "F", "G", "H", "I", "K"];
+const fmtHalf = (x) => (Number.isInteger(x) ? String(x) : (x * 2) + "/2");
+
+function allowedJ(j1, j2) {
+  const lo = Math.abs(j1 - j2), hi = j1 + j2, out = [];
+  for (let J = lo; J <= hi + 1e-9; J++) out.push(J);
+  return out;
+}
+function crossTerm(J, j1, j2) { // <L1·L2> in units of hbar^2
+  return 0.5 * (J * (J + 1) - j1 * (j1 + 1) - j2 * (j2 + 1));
+}
+function mMultiplicity(j1, j2) {
+  const map = {};
+  for (let m1 = -j1; m1 <= j1 + 1e-9; m1++)
+    for (let m2 = -j2; m2 <= j2 + 1e-9; m2++) {
+      const M = Math.round((m1 + m2) * 2) / 2;
+      map[M] = (map[M] || 0) + 1;
+    }
+  return map;
+}
+// Hund's rules for k electrons in a subshell with orbital quantum number l
+function hund(l, k) {
+  const orbs = 2 * l + 1;
+  const up = Math.min(k, orbs);
+  const down = Math.max(0, k - orbs);
+  let ML = 0;
+  for (let i = 0; i < up; i++) ML += (l - i);
+  for (let i = 0; i < down; i++) ML += (l - i);
+  const S = (up - down) / 2;
+  const L = Math.abs(ML);
+  const J = (k <= orbs) ? Math.abs(L - S) : (L + S);
+  // boxes occupancy (m_l from +l..-l): 1=up only, 2=up+down, 0=empty
+  const boxes = [];
+  for (let i = 0; i < orbs; i++) {
+    let occ = 0;
+    if (i < up) occ += 1;
+    if (i < down) occ += 2;
+    boxes.push(occ);
+  }
+  return { S, L, J, boxes, up, down };
+}
+// Madelung (Klechkovsky) filling order: [n, l]
+const SUBSHELLS = [[1,0],[2,0],[2,1],[3,0],[3,1],[4,0],[3,2],[4,1],[5,0],[4,2],[5,1],[6,0],[4,3],[5,2],[6,1],[7,0],[5,3],[6,2],[7,1]];
+const ELEM = ["","H","He","Li","Be","B","C","N","O","F","Ne","Na","Mg","Al","Si","P","S","Cl","Ar","K","Ca","Sc","Ti","V","Cr","Mn","Fe","Co","Ni","Cu","Zn","Ga","Ge","As","Se","Br","Kr"];
+const ELEMNAME = {1:"Водород",2:"Гелий",3:"Литий",4:"Бериллий",5:"Бор",6:"Углерод",7:"Азот",8:"Кислород",9:"Фтор",10:"Неон",11:"Натрий",12:"Магний",13:"Алюминий",14:"Кремний",15:"Фосфор",16:"Сера",17:"Хлор",18:"Аргон",19:"Калий",20:"Кальций",21:"Скандий",22:"Титан",23:"Ванадий",24:"Хром",25:"Марганец",26:"Железо",27:"Кобальт",28:"Никель",29:"Медь",30:"Цинк",31:"Галлий",32:"Германий",33:"Мышьяк",34:"Селен",35:"Бром",36:"Криптон"};
+function ptPos(Z) {
+  const m = {1:[1,1],2:[1,18],3:[2,1],4:[2,2],5:[2,13],6:[2,14],7:[2,15],8:[2,16],9:[2,17],10:[2,18],
+    11:[3,1],12:[3,2],13:[3,13],14:[3,14],15:[3,15],16:[3,16],17:[3,17],18:[3,18],
+    19:[4,1],20:[4,2],21:[4,3],22:[4,4],23:[4,5],24:[4,6],25:[4,7],26:[4,8],27:[4,9],28:[4,10],29:[4,11],30:[4,12],31:[4,13],32:[4,14],33:[4,15],34:[4,16],35:[4,17],36:[4,18]};
+  return m[Z];
+}
+// fill Z electrons, return {config:[{n,l,k}], valence:{l,k,n}}
+function fillAtom(Z) {
+  let left = Z; const config = []; let valence = null;
+  for (const [n, l] of SUBSHELLS) {
+    if (left <= 0) break;
+    const cap = 2 * (2 * l + 1);
+    const k = Math.min(cap, left);
+    config.push({ n, l, k });
+    if (k > 0) valence = { n, l, k, full: k === cap };
+    left -= k;
+  }
+  return { config, valence };
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 1: Гиромагнитное отношение
+// ═══════════════════════════════════════════════════════════════════════
+function GyroTab({ theme }) {
+  const cv = useRef(null);
+  const [particle, setParticle] = useState("electron");
+  const pr = useRef(particle);
+  useEffect(() => { pr.current = particle; }, [particle]);
+  useEffect(() => {
+    const cnv = cv.current; if (!cnv) return;
+    let raf, t0 = performance.now();
+    const draw = (now) => {
+      const { ctx, w, h } = setup(cnv);
+      const T = theme;
+      ctx.clearRect(0, 0, w, h);
+      const isE = pr.current === "electron";
+      const col = isE ? T.accent : T.accent3;
+      const cx = w * 0.30, cy = h * 0.52;
+      const rx = Math.min(w * 0.20, 110), ry = rx * 0.34;
+      ctx.strokeStyle = T.axis; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = T.warn; ctx.beginPath(); ctx.arc(cx, cy, 6, 0, Math.PI * 2); ctx.fill();
+      const ang = ((now - t0) * 0.0016) % (Math.PI * 2);
+      const dir = isE ? -1 : 1;
+      const px = cx + rx * Math.cos(dir * ang), py = cy + ry * Math.sin(dir * ang);
+      ctx.fillStyle = col; ctx.beginPath(); ctx.arc(px, py, 8, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "#fff"; ctx.font = "bold 12px monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(isE ? "\u2212" : "+", px, py);
+      const Llen = ry + 60;
+      arrow2(ctx, cx - 18, cy, cx - 18, cy - Llen, T.accent4, 3, 9);
+      ctx.fillStyle = T.accent4; ctx.font = "italic bold 15px serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      ctx.fillText("L", cx - 18, cy - Llen - 4);
+      const muUp = !isE;
+      const muEnd = muUp ? cy - Llen : cy + Llen;
+      arrow2(ctx, cx + 18, cy, cx + 18, muEnd, col, 3, 9);
+      ctx.fillStyle = col; ctx.textBaseline = muUp ? "bottom" : "top";
+      ctx.fillText("\u03bc", cx + 18, muUp ? muEnd - 4 : muEnd + 4);
+      ctx.fillStyle = T.textDim; ctx.font = "12px sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+      ctx.fillText(isE ? "электрон  (q < 0)" : "протон  (q > 0)", 12, 12);
+      ctx.fillText(isE ? "\u03bc \u2191\u2193 L" : "\u03bc \u2191\u2191 L", 12, 30);
+      const bx = w * 0.60;
+      ctx.fillStyle = T.text; ctx.font = "bold 14px monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+      ctx.fillText("\u03b3 = \u03bc / L = q / (2mc)", bx, 22);
+      ctx.fillStyle = T.textDim; ctx.font = "12px sans-serif";
+      ctx.fillText("\u03bc = \u03b3 \u00b7 L ,   L = \u210f\u00b7\u221a(j(j+1))", bx, 46);
+      const barW = w * 0.32, by1 = h * 0.50, by2 = h * 0.72;
+      ctx.fillStyle = T.textDim; ctx.font = "11px sans-serif"; ctx.textBaseline = "bottom";
+      ctx.fillText("\u03bc_B (Бора)", bx, by1 - 4);
+      ctx.fillStyle = T.accent; ctx.fillRect(bx, by1, barW, 14);
+      ctx.fillStyle = T.textDim; ctx.fillText("\u03bc_N (ядерный) \u2248 \u03bc_B / 1836", bx, by2 - 4);
+      ctx.fillStyle = T.accent3; ctx.fillRect(bx, by2, Math.max(3, barW / 1836 * 60), 14);
+      ctx.fillStyle = T.textDim; ctx.font = "10px sans-serif"; ctx.textBaseline = "top";
+      ctx.fillText("(длина \u00d760 для наглядности)", bx, by2 + 18);
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [theme]);
+  const T = theme;
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: T.textDim, lineHeight: 1.6, marginBottom: 14 }}>
+        Классический заряд на орбите имеет одновременно <b style={{ color: T.accent4 }}>механический</b> момент L и <b style={{ color: T.accent }}>магнитный</b> момент μ. Их отношение — <b>гиромагнитное</b> — зависит только от заряда и массы: γ = q/(2mc). Именно через эту связь магнитный момент «выдаёт» механический, который напрямую измерить нельзя.
+      </p>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, justifyContent: "center" }}>
+        {[["electron", "Электрон"], ["proton", "Протон"]].map(([k, lab]) => { const on = particle === k; return (
+          <button key={k} onClick={() => setParticle(k)} style={{ padding: "8px 18px", borderRadius: 8, border: `2px solid ${on ? T.accent : T.panelBorder}`, background: on ? T.accent + "2e" : T.btnBg, color: on ? T.accent : T.text, cursor: "pointer", fontSize: 13, fontWeight: on ? 700 : 500, boxShadow: on ? `0 0 0 2px ${T.accent}22` : "none" }}>{lab}</button>
+        ); })}
+      </div>
+      <StatRow theme={T} items={[
+        { l: "μ_B (Бора)", v: "9.3e-21", c: T.accent },
+        { l: "μ_N (ядерн.)", v: "5.1e-24", c: T.accent3 },
+        { l: "μ_B / μ_N", v: "\u2248 1836", c: T.warn },
+        { l: "g спина", v: "\u2248 2", c: T.accent2 },
+      ]} />
+      <canvas ref={cv} style={cs(T, 300)} />
+      <InfoBox theme={T} text={
+        "Магнетон Бора μ_B = eℏ/(2m_e c) — естественная единица магнитного момента электрона; ядерный магнетон в m_p/m_e ≈ 1836 раз меньше, поэтому магнетизм вещества определяют электроны, а не ядра. Множитель ℏ возникает из-за квантования проекции момента именно в единицах ℏ. Главный сюрприз: у спина гиромагнитное отношение вдвое больше орбитального — спиновый g-фактор ≈ 2. Этот «лишний» множитель и всплыл в опытах (следующие вкладки)."
+      } />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 2: Эйнштейн – де Гааз
+// ═══════════════════════════════════════════════════════════════════════
+function EdhTab({ theme }) {
+  const cv = useRef(null);
+  const [freq, setFreq] = useState(1.0);
+  const fr = useRef(freq);
+  useEffect(() => { fr.current = freq; }, [freq]);
+  useEffect(() => {
+    const cnv = cv.current; if (!cnv) return;
+    let raf, t0 = performance.now();
+    let phi = 0, om = 0;
+    const w0 = 2.2, gamma = 0.16, F = 1.7;
+    let last = t0;
+    const draw = (now) => {
+      const { ctx, w, h } = setup(cnv);
+      const T = theme; ctx.clearRect(0, 0, w, h);
+      const wd = fr.current * w0, tt = (now - t0) / 1000;
+      let dt = Math.min(0.05, (now - last) / 1000); last = now;
+      const steps = 6, sdt = dt / steps;
+      for (let i = 0; i < steps; i++) {
+        const acc = -w0 * w0 * phi - 2 * gamma * om + F * Math.sin(wd * tt);
+        om += acc * sdt; phi += om * sdt;
+      }
+      const Ath = (q) => F / Math.sqrt((w0 * w0 - q * q) ** 2 + (2 * gamma * q) ** 2);
+      // ── 3D cylinder ──
+      const cx = w * 0.24, rx = 48, ry = 16, topY = h * 0.27, botY = h * 0.74;
+      ctx.strokeStyle = T.axis; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(cx, h * 0.06); ctx.lineTo(cx, topY); ctx.stroke();
+      ctx.fillStyle = T.textDim; ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      ctx.fillText("нить (кручение)", cx, h * 0.06 - 2);
+      // body (cylindrical shading)
+      const bg = ctx.createLinearGradient(cx - rx, 0, cx + rx, 0);
+      bg.addColorStop(0, T.accent + "30"); bg.addColorStop(0.5, T.accent + "cc"); bg.addColorStop(1, T.accent + "30");
+      ctx.fillStyle = bg; ctx.fillRect(cx - rx, topY, 2 * rx, botY - topY);
+      // rotating meridians (show twist)
+      const NM = 9;
+      for (let k = 0; k < NM; k++) {
+        const a = (k / NM) * Math.PI * 2 + phi * 1.5, c = Math.cos(a);
+        if (c <= 0.04) continue;
+        const xx = cx + rx * Math.sin(a);
+        ctx.strokeStyle = T.accent2; ctx.globalAlpha = 0.12 + 0.5 * c; ctx.lineWidth = 1.1;
+        ctx.beginPath(); ctx.moveTo(xx, topY + 1); ctx.lineTo(xx, botY - 1); ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      // bottom front cap
+      ctx.fillStyle = T.accent + "55"; ctx.beginPath(); ctx.ellipse(cx, botY, rx, ry, 0, 0, Math.PI); ctx.fill();
+      // top cap
+      ctx.fillStyle = T.accent + "dd"; ctx.beginPath(); ctx.ellipse(cx, topY, rx, ry, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.strokeStyle = T.accent; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.ellipse(cx, topY, rx, ry, 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx - rx, topY); ctx.lineTo(cx - rx, botY); ctx.moveTo(cx + rx, topY); ctx.lineTo(cx + rx, botY); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(cx, botY, rx, ry, 0, 0, Math.PI); ctx.stroke();
+      // rotation marker on top rim
+      const mxx = cx + rx * 0.92 * Math.sin(phi * 1.5), myy = topY - ry * 0.92 * Math.cos(phi * 1.5);
+      ctx.fillStyle = T.warn; ctx.beginPath(); ctx.arc(mxx, myy, 4, 0, Math.PI * 2); ctx.fill();
+      // magnetization arrow (flips at drive freq)
+      const Mdir = Math.sin(wd * tt) >= 0 ? 1 : -1;
+      const my1 = (botY + topY) / 2 + Mdir * (botY - topY) * 0.40, my2 = (botY + topY) / 2 - Mdir * (botY - topY) * 0.40;
+      arrow2(ctx, cx, my1, cx, my2, T.accent3, 3, 9);
+      ctx.fillStyle = T.accent3; ctx.font = "bold 12px sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      ctx.fillText("M", cx + 8, my2);
+      ctx.fillStyle = T.textDim; ctx.font = "12px monospace"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+      ctx.fillText("φ = " + phi.toFixed(2) + " рад", cx, botY + 18);
+      // ── resonance curve (right) ──
+      const gx = w * 0.50, gw = w * 0.44, gy = h * 0.16, gh = h * 0.62;
+      ctx.strokeStyle = T.axis; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(gx, gy); ctx.lineTo(gx, gy + gh); ctx.lineTo(gx + gw, gy + gh); ctx.stroke();
+      ctx.fillStyle = T.textDim; ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+      ctx.fillText("частота перемагничивания  f / f₀", gx + gw / 2, gy + gh + 6);
+      ctx.save(); ctx.translate(gx - 14, gy + gh / 2); ctx.rotate(-Math.PI / 2); ctx.fillText("амплитуда", 0, 0); ctx.restore();
+      const Amax = Ath(w0);
+      ctx.strokeStyle = T.accent2; ctx.lineWidth = 2; ctx.beginPath();
+      for (let i = 0; i <= 100; i++) {
+        const rr = 0.2 + (i / 100) * 1.8, A = Ath(rr * w0) / Amax;
+        const X = gx + (rr - 0.2) / 1.8 * gw, Y = gy + gh - A * gh * 0.92;
+        i ? ctx.lineTo(X, Y) : ctx.moveTo(X, Y);
+      }
+      ctx.stroke();
+      const A0 = Ath(wd) / Amax, MX = gx + (fr.current - 0.2) / 1.8 * gw, MY = gy + gh - A0 * gh * 0.92;
+      ctx.setLineDash([3, 3]); ctx.strokeStyle = T.warn + "66"; ctx.beginPath(); ctx.moveTo(MX, MY); ctx.lineTo(MX, gy + gh); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = T.warn; ctx.beginPath(); ctx.arc(MX, MY, 5, 0, Math.PI * 2); ctx.fill();
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [theme]);
+  const T = theme;
+  const near = Math.abs(freq - 1) < 0.12;
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: T.textDim, lineHeight: 1.6, marginBottom: 14 }}>
+        Перемагничивая образец (стрелка <b style={{ color: T.accent3 }}>M</b> переключается), мы переворачиваем все магнитные моменты — а с ними и связанные механические. По закону сохранения момента импульса подвешенный цилиндр <b style={{ color: T.accent }}>поворачивается</b> (жёлтая метка на крышке). Эффект крошечный, поэтому Эйнштейн и де Гааз сделали <b>торсионный маятник</b> и перемагничивали на <b style={{ color: T.accent2 }}>резонансной частоте</b>.
+      </p>
+      <Slider theme={T} label="Частота перемагничивания f / f₀" value={freq} min={0.3} max={1.9} step={0.01} onChange={setFreq} format={v => v.toFixed(2)} />
+      <StatRow theme={T} items={[
+        { l: "f / f₀", v: freq.toFixed(2), c: T.accent },
+        { l: "режим", v: near ? "резонанс!" : "вне резонанса", c: near ? T.warn : T.textDim },
+        { l: "ω за 1 переворот", v: "~10⁻³ с⁻¹", c: T.accent3 },
+      ]} />
+      <canvas ref={cv} style={cs(T, 300)} />
+      <InfoBox theme={T} text={
+        "Жёлтая метка на верхней крышке показывает поворот цилиндра, кривая справа — резонансную зависимость амплитуды от частоты накачки. На резонансе (f ≈ f₀) даже слабые периодические толчки от перемагничивания раскачивают маятник до измеримых углов. Исторический сюрприз: измеренное отношение μ/L оказалось примерно вдвое больше орбитального предсказания — первый намёк на спиновый g-фактор ≈ 2."
+      } />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 3: Штерн – Герлах
+// ═══════════════════════════════════════════════════════════════════════
+function SgTab({ theme }) {
+  const cv = useRef(null);
+  const [mode, setMode] = useState("silver");
+  const [j2, setJ2] = useState(3);
+  const [grad, setGrad] = useState(1.0);
+  const ref = useRef({ mode, j2, grad });
+  useEffect(() => { ref.current = { mode, j2, grad }; }, [mode, j2, grad]);
+  const cfg = (M, J2) => {
+    if (M === "classical") return { jmax: 2.5, ms: null };
+    if (M === "naive") return { jmax: 1, ms: [-1, 0, 1] };
+    if (M === "silver") return { jmax: 0.5, ms: [-0.5, 0.5] };
+    const j = J2 / 2, ms = []; for (let m = -j; m <= j + 1e-9; m++) ms.push(m); return { jmax: j, ms };
+  };
+  useEffect(() => {
+    const cnv = cv.current; if (!cnv) return;
+    let raf, parts = [], hist = null, lastKey = "";
+    const draw = () => {
+      const { ctx, w, h } = setup(cnv);
+      const T = theme; ctx.clearRect(0, 0, w, h);
+      const { mode: M, j2: J2, grad: G } = ref.current;
+      const { jmax, ms } = cfg(M, J2);
+      const srcX = w * 0.06, magX1 = w * 0.28, magX2 = w * 0.62, scrX = w * 0.88;
+      const midY = h * 0.5, NB = 120, top = midY - 95, span = 190;
+      const L1 = magX2 - magX1, L2 = scrX - magX2;
+      const maxOffset = Math.min(span * 0.30 * G, span * 0.46);
+      const key = M + "|" + J2 + "|" + G;
+      if (key !== lastKey || !hist) { hist = new Array(NB).fill(0); parts = []; lastKey = key; }
+      if (parts.length < 90 && Math.random() < 0.8) {
+        let m; if (ms) m = ms[Math.floor(Math.random() * ms.length)]; else m = (Math.random() * 2 - 1) * jmax;
+        const offset = (m / jmax) * maxOffset, a = offset / (L1 * (L1 / 2 + L2));
+        parts.push({ x: srcX, a, offset });
+      }
+      // magnet poles
+      ctx.fillStyle = T.accent3 + "22";
+      ctx.beginPath(); ctx.moveTo(magX1, midY - 70); ctx.lineTo(magX2, midY - 70); ctx.lineTo(magX2, midY - 30); ctx.lineTo(magX1, midY - 46); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = T.accent + "22"; ctx.fillRect(magX1, midY + 42, magX2 - magX1, 28);
+      ctx.fillStyle = T.textDim; ctx.font = "bold 13px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("N", (magX1 + magX2) / 2, midY - 50); ctx.fillText("S", (magX1 + magX2) / 2, midY + 56);
+      ctx.font = "11px sans-serif"; ctx.fillText("∇B", magX2 - 14, midY - 66);
+      ctx.fillStyle = T.textDim; ctx.font = "11px sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+      ctx.fillText("источник", srcX - 4, midY - 14);
+      ctx.strokeStyle = T.axis; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(scrX, top); ctx.lineTo(scrX, top + span); ctx.stroke();
+      ctx.fillStyle = T.textDim; ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.fillText("экран", scrX, top + span + 4);
+      // guide lines for predicted discrete spots
+      if (ms) for (const m of ms) {
+        const yy = midY + (m / jmax) * maxOffset;
+        ctx.strokeStyle = T.accent2 + "33"; ctx.setLineDash([2, 3]); ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(magX2, yy); ctx.lineTo(scrX, yy); ctx.stroke(); ctx.setLineDash([]);
+      }
+      const yOf = (p) => {
+        if (p.x <= magX1) return midY;
+        if (p.x >= magX2) return midY + (0.5 * p.a * L1 * L1 + p.a * L1 * (p.x - magX2));
+        const dx = p.x - magX1; return midY + 0.5 * p.a * dx * dx;
+      };
+      for (const p of parts) { p.x += 2.6; if (p.x >= scrX) { const yy = midY + p.offset, bin = Math.max(0, Math.min(NB - 1, Math.floor((yy - top) / span * NB))); hist[bin]++; p.dead = true; } }
+      parts = parts.filter(p => !p.dead); if (parts.length > 100) parts = parts.slice(-100);
+      const col = M === "classical" ? T.warn : T.accent;
+      for (const p of parts) { ctx.fillStyle = col; ctx.globalAlpha = 0.85; ctx.beginPath(); ctx.arc(p.x, yOf(p), 2.6, 0, Math.PI * 2); ctx.fill(); }
+      ctx.globalAlpha = 1;
+      let hmax = 1; for (let b = 0; b < NB; b++) if (hist[b] > hmax) hmax = hist[b];
+      for (let b = 0; b < NB; b++) { if (!hist[b]) continue; const yy = top + (b + 0.5) / NB * span, len = (hist[b] / hmax) * 46; ctx.fillStyle = col; ctx.fillRect(scrX + 2, yy - 1.3, len, 2.6); }
+      raf = requestAnimationFrame(draw);
+    };
+    raf = requestAnimationFrame(draw);
+    return () => cancelAnimationFrame(raf);
+  }, [theme]);
+  const T = theme;
+  const { jmax, ms } = cfg(mode, j2);
+  const nspots = mode === "classical" ? "∞" : (ms ? String(ms.length) : "");
+  const center = mode === "classical" ? "—" : ((ms && ms.some(m => Math.abs(m) < 1e-9)) ? "есть" : "нет");
+  const modes = [["classical", "Классика"], ["naive", "Наивный квант"], ["silver", "Серебро (s=½)"], ["custom", "Свой момент j"]];
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: T.textDim, lineHeight: 1.6, marginBottom: 14 }}>
+        В неоднородном поле на магнитный момент действует <b>сила</b> ∝ проекции момента, и пучок отклоняется. Сравните предсказания: <b style={{ color: T.warn }}>классика</b> — сплошная полоса; <b>наивный квант</b> — нечётное число пятен (с неотклонённым центром); <b style={{ color: T.accent }}>реальный опыт с серебром</b> — два пятна и без центра (это и есть спин ½); и произвольный момент j — ровно 2j+1 пятен.
+      </p>
+      <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap", justifyContent: "center" }}>
+        {modes.map(([k, lab]) => {
+          const on = mode === k;
+          return <button key={k} onClick={() => setMode(k)} style={{ padding: "8px 14px", borderRadius: 8, border: `2px solid ${on ? T.accent : T.panelBorder}`, background: on ? T.accent + "2e" : T.btnBg, color: on ? T.accent : T.text, cursor: "pointer", fontSize: 13, fontWeight: on ? 700 : 500, boxShadow: on ? `0 0 0 2px ${T.accent}22` : "none" }}>{lab}</button>;
+        })}
+      </div>
+      {mode === "custom" && <Slider theme={T} label="Полный момент j" value={j2} min={1} max={5} step={1} onChange={setJ2} format={v => fmtHalf(v / 2) + (v % 2 === 0 ? " (целый)" : " (полуцелый)")} />}
+      <Slider theme={T} label="Градиент поля ∇B (масштаб разлёта)" value={grad} min={0.5} max={1.5} step={0.05} onChange={setGrad} format={v => v.toFixed(2) + "×"} />
+      <StatRow theme={T} items={[
+        { l: "режим", v: mode === "classical" ? "классика" : (mode === "naive" ? "наивный" : (mode === "silver" ? "серебро" : "свой j")), c: mode === "classical" ? T.warn : T.accent },
+        { l: "j", v: mode === "classical" ? "любое" : fmtHalf(jmax), c: T.accent2 },
+        { l: "число пятен", v: nspots, c: T.warn },
+        { l: "центр. пятно", v: center, c: T.accent3 },
+      ]} />
+      <canvas ref={cv} style={cs(T, 300)} />
+      <InfoBox theme={T} text={
+        "Классическая модель предсказывала непрерывную полосу — её наблюдение опровергло бы квантование. Наивная квантовая теория (только орбитальный момент) давала нечётное число пятен 2l+1 с обязательным неотклонённым центром (m=0). Реальный опыт с серебром дал ровно два пятна и БЕЗ центрального — это невозможно объяснить орбитальным моментом и требует спина ½. В общем случае получается 2j+1 пятен: для полуцелого j их чётное число и нет центра, для целого — нечётное с центром."
+      } />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 4: Сложение моментов — векторная модель
+// ═══════════════════════════════════════════════════════════════════════
+function AddVecTab({ theme }) {
+  const cv = useRef(null);
+  const [a2, setA2] = useState(4);
+  const [b2, setB2] = useState(6);
+  const [selIdx, setSelIdx] = useState(0);
+  useEffect(() => { const n = allowedJ(a2 / 2, b2 / 2).length; setSelIdx(i => Math.min(i, n - 1)); }, [a2, b2]);
+  useEffect(() => {
+    const cnv = cv.current; if (!cnv) return;
+    const { ctx, w, h } = setup(cnv);
+    const T = theme; ctx.clearRect(0, 0, w, h);
+    const j1 = a2 / 2, j2 = b2 / 2, Js = allowedJ(j1, j2);
+    const selJ = Js[Math.min(selIdx, Js.length - 1)];
+    const Ox = w * 0.13, Oy = h * 0.58;
+    const maxR = j1 + j2, scale = Math.min((w * 0.72) / maxR, (h * 0.42) / maxR);
+    const a = j1 * scale, b = j2 * scale, R = selJ * scale;
+    for (const J of Js) {
+      const sel = (J === selJ);
+      ctx.strokeStyle = sel ? T.warn + "99" : T.grid; ctx.lineWidth = sel ? 1.6 : 1;
+      ctx.beginPath(); ctx.arc(Ox, Oy, J * scale, -Math.PI * 0.60, 0.04); ctx.stroke();
+      const lx = Ox + J * scale * Math.cos(-0.28), ly = Oy + J * scale * Math.sin(-0.28);
+      ctx.fillStyle = sel ? T.warn : T.textDim; ctx.font = sel ? "bold 12px monospace" : "11px monospace";
+      ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText("J=" + fmtHalf(J), lx + 5, ly);
+    }
+    const x = (R * R - b * b + a * a) / (2 * (a || 1)), yy = Math.sqrt(Math.max(0, R * R - x * x));
+    const Px = Ox + x, Py = Oy - yy;
+    arrow2(ctx, Ox, Oy, Ox + a, Oy, T.accent, 3, 9);
+    arrow2(ctx, Ox + a, Oy, Px, Py, T.accent3, 3, 9);
+    arrow2(ctx, Ox, Oy, Px, Py, T.warn, 3.5, 11);
+    ctx.fillStyle = T.accent; ctx.font = "italic bold 15px serif"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillText("j₁", Ox + a / 2, Oy + 5);
+    ctx.fillStyle = T.accent3; ctx.textBaseline = "bottom"; ctx.fillText("j₂", (Ox + a + Px) / 2 + 8, (Oy + Py) / 2 - 2);
+    ctx.fillStyle = T.warn; ctx.fillText("J", (Ox + Px) / 2 - 10, (Oy + Py) / 2 - 2);
+    // ── states ledger bar: total = sum of multiplets (2J+1) ──
+    const total = (a2 + 1) * (b2 + 1), barX = w * 0.10, barW = w * 0.80, barY = h - 30, barH = 17;
+    let xacc = barX;
+    Js.slice().reverse().forEach((J, idx) => {
+      const seg = (2 * J + 1) / total * barW;
+      ctx.fillStyle = `hsl(${(200 + idx * 47) % 360},62%,57%)`;
+      ctx.fillRect(xacc, barY, Math.max(0, seg - 1.2), barH);
+      if (seg > 20) { ctx.fillStyle = "#fff"; ctx.font = "bold 10px monospace"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(String(2 * J + 1), xacc + seg / 2, barY + barH / 2); }
+      xacc += seg;
+    });
+    ctx.fillStyle = T.textDim; ctx.font = "11px sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "bottom";
+    ctx.fillText("всего состояний  (2j₁+1)(2j₂+1) = " + total + " = Σ(2J+1)  →  мультиплеты J (вкл. 5)", barX, barY - 4);
+  }, [theme, a2, b2, selIdx]);
+  const T = theme, j1 = a2 / 2, j2 = b2 / 2, Js = allowedJ(j1, j2);
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: T.textDim, lineHeight: 1.6, marginBottom: 14 }}>
+        Складывать моменты в КМ — это как складывать два вектора, но длина суммы ограничена <b>правилом треугольника</b>. Поворачивая короткий вектор j₂ относительно длинного j₁, полный момент J пробегает все целочисленные значения от <b style={{ color: T.warn }}>|j₁−j₂|</b> до <b style={{ color: T.warn }}>j₁+j₂</b>. Дуги — все разрешённые длины |J|, а полоса внизу показывает, как полное число состояний разбивается на мультиплеты.
+      </p>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, justifyContent: "center", flexWrap: "wrap" }}>
+        <button onClick={() => { setA2(4); setB2(6); }} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${T.panelBorder}`, background: T.btnBg, color: T.text, cursor: "pointer", fontSize: 12 }}>j₁=2, j₂=3</button>
+        <button onClick={() => { setA2(2); setB2(1); }} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${T.panelBorder}`, background: T.btnBg, color: T.text, cursor: "pointer", fontSize: 12 }}>L=1, S=½ (электрон)</button>
+        <button onClick={() => { setA2(1); setB2(1); }} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${T.panelBorder}`, background: T.btnBg, color: T.text, cursor: "pointer", fontSize: 12 }}>s=½, s=½</button>
+      </div>
+      <Slider theme={T} label="Момент j₁" value={a2} min={1} max={6} step={1} onChange={setA2} format={v => fmtHalf(v / 2)} />
+      <Slider theme={T} label="Момент j₂" value={b2} min={1} max={6} step={1} onChange={setB2} format={v => fmtHalf(v / 2)} />
+      <Slider theme={T} label="Выбранное J" value={selIdx} min={0} max={Math.max(0, Js.length - 1)} step={1} onChange={setSelIdx} format={v => "J = " + fmtHalf(Js[Math.min(v, Js.length - 1)])} />
+      <StatRow theme={T} items={[
+        { l: "J_min", v: fmtHalf(Math.abs(j1 - j2)), c: T.accent },
+        { l: "J_max", v: fmtHalf(j1 + j2), c: T.accent3 },
+        { l: "число J", v: String(Js.length), c: T.warn },
+        { l: "всего состояний", v: String((a2 + 1) * (b2 + 1)), c: T.accent2 },
+      ]} />
+      <canvas ref={cv} style={cs(T, 320)} />
+      <InfoBox theme={T} text={
+        "Длины векторов взяты ∝ квантовым числам (так правило треугольника точно даёт разрешённые J). Истинная «длина» момента равна ℏ√(J(J+1)). Полное число состояний (2j₁+1)(2j₂+1) не теряется — оно ровно равно сумме размеров мультиплетов Σ(2J+1) (полоса внизу). Как именно состояния перегруппировываются по M и J — наглядно на вкладке «Сложение: проекции и L·S»."
+      } />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 5: Сложение моментов — сетка проекций и L·S
+// ═══════════════════════════════════════════════════════════════════════
+function AddGridTab({ theme }) {
+  const cv = useRef(null);
+  const [a2, setA2] = useState(1), [b2, setB2] = useState(1);
+  useEffect(() => {
+    const cnv = cv.current; if (!cnv) return;
+    const { ctx, w, h } = setup(cnv);
+    const T = theme; ctx.clearRect(0, 0, w, h);
+    const j1 = a2 / 2, j2 = b2 / 2, n1 = a2 + 1, n2 = b2 + 1;
+    const gx0 = w * 0.12, gy0 = h * 0.14, gw = w * 0.42, gh = h * 0.66;
+    const dx = gw / Math.max(1, a2), dy = gh / Math.max(1, b2);
+    ctx.strokeStyle = T.axis; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(gx0, gy0 + gh); ctx.lineTo(gx0 + gw, gy0 + gh); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(gx0, gy0); ctx.lineTo(gx0, gy0 + gh); ctx.stroke();
+    ctx.fillStyle = T.textDim; ctx.font = "12px monospace"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillText("m\u2081", gx0 + gw / 2, gy0 + gh + 16);
+    ctx.save(); ctx.translate(gx0 - 24, gy0 + gh / 2); ctx.rotate(-Math.PI / 2); ctx.fillText("m\u2082", 0, 0); ctx.restore();
+    const Mmin = -(j1 + j2), Mmax = j1 + j2;
+    const colForM = (M) => { const t = (M - Mmin) / Math.max(1e-9, (Mmax - Mmin)); return `hsl(${198 + t * 122},72%,60%)`; };
+    for (let i = 0; i < n1; i++) for (let k = 0; k < n2; k++) {
+      const m1 = -j1 + i, m2 = -j2 + k, px = gx0 + i * dx, py = gy0 + gh - k * dy;
+      ctx.fillStyle = colForM(m1 + m2);
+      ctx.beginPath(); ctx.arc(px, py, n1 * n2 > 36 ? 4 : 6, 0, Math.PI * 2); ctx.fill();
+    }
+    const Mmap = mMultiplicity(j1, j2);
+    const Mvals = Object.keys(Mmap).map(Number).sort((p, q) => p - q);
+    const gmax = Math.max(...Mvals.map(M => Mmap[M]));
+    const hx0 = w * 0.64, hy0 = gy0, hw = w * 0.30, hh = gh, bw = hw / Mvals.length;
+    ctx.fillStyle = T.textDim; ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillText("сколько способов дать данную M = m\u2081+m\u2082", hx0 + hw / 2, hy0 - 5);
+    ctx.strokeStyle = T.axis; ctx.beginPath(); ctx.moveTo(hx0, hy0 + hh); ctx.lineTo(hx0 + hw, hy0 + hh); ctx.stroke();
+    Mvals.forEach((M, idx) => {
+      const bh = (Mmap[M] / gmax) * (hh - 18), bx = hx0 + idx * bw;
+      ctx.fillStyle = colForM(M); ctx.fillRect(bx + 1.5, hy0 + hh - bh, bw - 3, bh);
+      ctx.fillStyle = T.text; ctx.font = "bold 10px monospace"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      ctx.fillText(String(Mmap[M]), bx + bw / 2, hy0 + hh - bh - 2);
+      ctx.fillStyle = T.textDim; ctx.font = "9px monospace"; ctx.textBaseline = "top";
+      ctx.fillText(fmtHalf(M), bx + bw / 2, hy0 + hh + 3);
+    });
+  }, [theme, a2, b2]);
+  const T = theme, j1 = a2 / 2, j2 = b2 / 2, Js = allowedJ(j1, j2);
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: T.textDim, lineHeight: 1.6, marginBottom: 14 }}>
+        Проекции просто складываются: M = m₁+m₂. Подсчитав, <b>сколькими способами</b> получается каждая суммарная M (гистограмма справа), мы видим, как (2j₁+1)(2j₂+1) состояний распадаются на мультиплеты полного момента J. А скалярное произведение <b style={{ color: T.accent2 }}>L·S = ½(J(J+1) − j₁(j₁+1) − j₂(j₂+1))</b> — именно та «перекрёстная» добавка, что отвечает за взаимодействие моментов.
+      </p>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, justifyContent: "center", flexWrap: "wrap" }}>
+        <button onClick={() => { setA2(1); setB2(1); }} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${T.panelBorder}`, background: T.btnBg, color: T.text, cursor: "pointer", fontSize: 12 }}>s=½ ⊗ s=½</button>
+        <button onClick={() => { setA2(2); setB2(1); }} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${T.panelBorder}`, background: T.btnBg, color: T.text, cursor: "pointer", fontSize: 12 }}>L=1 ⊗ S=½</button>
+        <button onClick={() => { setA2(4); setB2(6); }} style={{ padding: "6px 12px", borderRadius: 8, border: `1px solid ${T.panelBorder}`, background: T.btnBg, color: T.text, cursor: "pointer", fontSize: 12 }}>j₁=2 ⊗ j₂=3</button>
+      </div>
+      <Slider theme={T} label="Момент j₁" value={a2} min={1} max={6} step={1} onChange={setA2} format={v => fmtHalf(v / 2)} />
+      <Slider theme={T} label="Момент j₂" value={b2} min={1} max={6} step={1} onChange={setB2} format={v => fmtHalf(v / 2)} />
+      <canvas ref={cv} style={cs(T, 300)} />
+      <div style={{ marginTop: 12, fontSize: 13, color: T.textDim, textAlign: "center" }}>
+        Разложение: <b style={{ color: T.text, fontFamily: "monospace" }}>{fmtHalf(j1)} ⊗ {fmtHalf(j2)} = {Js.slice().reverse().map(fmtHalf).join(" ⊕ ")}</b>
+      </div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "center", marginTop: 10 }}>
+        {Js.slice().reverse().map(J => (
+          <div key={J} style={{ textAlign: "center", padding: "6px 12px", borderRadius: 8, background: T.accent2 + "11", border: `1px solid ${T.accent2}33` }}>
+            <div style={{ fontSize: 11, color: T.textDim }}>J = {fmtHalf(J)}</div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: T.accent2, fontFamily: "monospace" }}>L·S = {crossTerm(J, j1, j2).toFixed(2)}</div>
+          </div>
+        ))}
+      </div>
+      <InfoBox theme={T} text={
+        "Для двух спинов ½ получаются триплет (J=1, L·S = +¼) и синглет (J=0, L·S = −¾) — ровно те значения из лекции. Эта же добавка L·S управляет спин-орбитальным расщеплением (вкладка 6) и обменным взаимодействием (вкладка 8). Гистограмма «ступеньками» и есть наглядное разложение произведения моментов на мультиплеты."
+      } />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 6: Тонкая и сверхтонкая структура
+// ═══════════════════════════════════════════════════════════════════════
+function FineTab({ theme }) {
+  const cv = useRef(null);
+  const [l, setL] = useState(1);
+  useEffect(() => {
+    const cnv = cv.current; if (!cnv) return;
+    const { ctx, w, h } = setup(cnv);
+    const T = theme; ctx.clearRect(0, 0, w, h);
+    const bracket = (x1, ya, yb, x2, ymid, sp) => {
+      ctx.strokeStyle = T.warn + "aa"; ctx.lineWidth = 1.1; ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.moveTo(x1, ya); ctx.lineTo(x2, ymid - sp); ctx.moveTo(x1, yb); ctx.lineTo(x2, ymid + sp); ctx.stroke();
+      ctx.setLineDash([]);
+    };
+    const eTop = h * 0.16, eBot = h * 0.84;
+    const E = n => -13.6 / (n * n), emin = E(1), emax = E(3);
+    const yOf = e => eTop + (e - emax) / (emin - emax) * (eBot - eTop);
+    const p1x = w * 0.07, p1w = w * 0.17;
+    ctx.fillStyle = T.textDim; ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillText("Грубая (~Ry)", p1x + p1w / 2, eTop - 8);
+    for (const n of [1, 2, 3]) {
+      const y = yOf(E(n));
+      ctx.strokeStyle = n === 2 ? T.accent : T.axis; ctx.lineWidth = n === 2 ? 2.5 : 1.5;
+      ctx.beginPath(); ctx.moveTo(p1x, y); ctx.lineTo(p1x + p1w, y); ctx.stroke();
+      ctx.fillStyle = n === 2 ? T.accent : T.textDim; ctx.font = "11px monospace"; ctx.textAlign = "right"; ctx.textBaseline = "middle";
+      ctx.fillText("n=" + n, p1x - 4, y);
+    }
+    const y2 = yOf(E(2));
+    ctx.strokeStyle = T.warn; ctx.lineWidth = 1; ctx.strokeRect(p1x - 2, y2 - 8, p1w + 4, 16);
+    const p2x = w * 0.40, p2w = w * 0.20, p2y = h * 0.5, gap = h * 0.11;
+    ctx.fillStyle = T.textDim; ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillText("Тонкая (~\u03b1\u00b2Ry)", p2x + p2w / 2, eTop - 8);
+    const lvls = [["\u00b2P\u2083\u2044\u2082", p2y - gap, T.accent3], ["\u00b2S\u2081\u2044\u2082", p2y + gap * 0.15, T.accent], ["\u00b2P\u2081\u2044\u2082", p2y + gap, T.accent2]];
+    for (const [lab, yy, c] of lvls) {
+      ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(p2x, yy); ctx.lineTo(p2x + p2w, yy); ctx.stroke();
+      ctx.fillStyle = c; ctx.font = "12px monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(lab, p2x + p2w + 6, yy);
+    }
+    bracket(p1x + p1w + 2, y2 - 8, y2 + 8, p2x - 2, p2y, gap + 6);
+    ctx.fillStyle = T.warn; ctx.font = "10px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillText("\u2248 10\u207b\u2074 Ry", p2x + p2w / 2, p2y - gap - 6);
+    ctx.strokeStyle = T.warn; ctx.lineWidth = 1; ctx.strokeRect(p2x - 2, p2y + gap * 0.15 - 6, p2w + 4, 12);
+    const p3x = w * 0.74, p3w = w * 0.18, p3y = h * 0.5, hg = h * 0.09;
+    ctx.fillStyle = T.textDim; ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillText("Сверхтонкая", p3x + p3w / 2, eTop - 8);
+    const f1 = p3y - hg, f0 = p3y + hg;
+    for (const [lab, yy, c] of [["F=1", f1, T.accent4], ["F=0", f0, T.warn]]) {
+      ctx.strokeStyle = c; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(p3x, yy); ctx.lineTo(p3x + p3w, yy); ctx.stroke();
+      ctx.fillStyle = c; ctx.font = "12px monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle"; ctx.fillText(lab, p3x + p3w + 6, yy);
+    }
+    bracket(p2x + p2w + 2, p2y + gap * 0.15 - 6, p2y + gap * 0.15 + 6, p3x - 2, p3y, hg + 6);
+    arrow2(ctx, p3x + p3w / 2, f1, p3x + p3w / 2, f0, T.accent3, 2, 7);
+    ctx.fillStyle = T.accent3; ctx.font = "10px sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText("21 см", p3x + p3w / 2 + 6, (f1 + f0) / 2);
+    ctx.fillStyle = T.warn; ctx.textAlign = "center"; ctx.textBaseline = "top"; ctx.fillText("\u2248 10\u207b\u2076 Ry", p3x + p3w / 2, f0 + 8);
+  }, [theme]);
+  const T = theme, s = 0.5, js = [];
+  for (let J = Math.abs(l - s); J <= l + s + 1e-9; J++) js.push(J);
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: T.textDim, lineHeight: 1.6, marginBottom: 14 }}>
+        Спин-орбитальное взаимодействие (электрон «чувствует» магнитное поле вращающегося вокруг него ядра) расщепляет уровни на <b style={{ color: T.accent2 }}>тонкую структуру</b> масштаба α²·Ry ≈ 10⁻⁴ Ry. Диполь-дипольное взаимодействие спинов электрона и протона даёт ещё более мелкую <b style={{ color: T.accent4 }}>сверхтонкую</b> структуру (~10⁻⁶ Ry) — та самая линия 21 см. Каскад «зумов» показывает все три масштаба.
+      </p>
+      <StatRow theme={T} items={[
+        { l: "\u03b1 = e\u00b2/\u210fc", v: "1/137", c: T.accent },
+        { l: "тонкое / Ry", v: "~10\u207b\u2074", c: T.accent2 },
+        { l: "сверхтонкое / Ry", v: "~10\u207b\u2076", c: T.accent3 },
+      ]} />
+      <canvas ref={cv} style={cs(T, 320)} />
+      <div style={{ marginTop: 14 }}>
+        <Slider theme={T} label="Орбитальный момент l (конструктор терма ²L_J)" value={l} min={0} max={3} step={1} onChange={setL} format={v => ["s", "p", "d", "f"][v] + " (l=" + v + ")"} />
+        <div style={{ textAlign: "center", fontSize: 13, color: T.textDim }}>при s=½ возможные J = |l−½| … l+½:</div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap", marginTop: 8 }}>
+          {js.map(J => (
+            <div key={J} style={{ padding: "6px 16px", borderRadius: 8, background: T.accent + "11", border: `1px solid ${T.accent}33` }}>
+              <span style={{ fontSize: 17, fontWeight: 700, color: T.accent, fontFamily: "monospace" }}>²{LSYM[l]}<sub>{fmtHalf(J)}</sub></span>
+            </div>
+          ))}
+        </div>
+      </div>
+      <InfoBox theme={T} text={
+        "Постоянная тонкой структуры α = e²/ℏc ≈ 1/137 — безразмерная мера «силы» электромагнетизма; именно α² задаёт масштаб спин-орбитального расщепления. Уровень n=1 (l=0) тонко не расщепляется, а n=2 (есть l=1) — да; это видно в интерферометре Фабри–Перо как раздвоение кольца. Сверхтонкий переход F=1→F=0 в основном состоянии водорода излучает фотон 21 см — основу радиоастрономии."
+      } />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 7: Тождественность и принцип Паули
+// ═══════════════════════════════════════════════════════════════════════
+function PauliTab({ theme }) {
+  const cv = useRef(null);
+  const [na, setNa] = useState(1), [nb, setNb] = useState(2);
+  const [sym, setSym] = useState(false);
+  useEffect(() => {
+    const cnv = cv.current; if (!cnv) return;
+    const { ctx, w, h } = setup(cnv);
+    const T = theme; ctx.clearRect(0, 0, w, h);
+    const N = 70;
+    const size = Math.min(w * 0.48, h * 0.84);
+    const x0 = w * 0.05, y0 = (h - size) / 2;
+    const phi = (n, x) => Math.sin(n * Math.PI * x);
+    const pauliZero = (!sym && na === nb);
+    const vals = []; let vmax = 1e-9;
+    for (let i = 0; i < N; i++) {
+      const row = [], x1 = (i + 0.5) / N;
+      for (let k = 0; k < N; k++) {
+        const x2 = (k + 0.5) / N;
+        const psi = phi(na, x1) * phi(nb, x2) + (sym ? 1 : -1) * phi(na, x2) * phi(nb, x1);
+        const v = psi * psi; row.push(v); if (v > vmax) vmax = v;
+      }
+      vals.push(row);
+    }
+    const cell = size / N;
+    for (let i = 0; i < N; i++) for (let k = 0; k < N; k++) {
+      const t = pauliZero ? 0 : vals[i][k] / vmax;
+      ctx.fillStyle = `hsl(${sym ? 190 : 330},80%,${6 + 62 * Math.sqrt(t)}%)`;
+      ctx.fillRect(x0 + i * cell, y0 + (N - 1 - k) * cell, cell + 0.7, cell + 0.7);
+    }
+    ctx.strokeStyle = T.axis; ctx.lineWidth = 1; ctx.strokeRect(x0, y0, size, size);
+    ctx.strokeStyle = "#ffffff66"; ctx.setLineDash([5, 4]); ctx.beginPath(); ctx.moveTo(x0, y0 + size); ctx.lineTo(x0 + size, y0); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = T.textDim; ctx.font = "12px monospace"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillText("x\u2081", x0 + size / 2, y0 + size + 6);
+    ctx.save(); ctx.translate(x0 - 16, y0 + size / 2); ctx.rotate(-Math.PI / 2); ctx.fillText("x\u2082", 0, 0); ctx.restore();
+    ctx.fillStyle = "#fff"; ctx.font = "11px sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.fillText("|\u03c8(x\u2081,x\u2082)|\u00b2", x0 + 6, y0 + 6);
+    if (pauliZero) {
+      ctx.fillStyle = T.warn; ctx.font = "bold 13px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("\u03c8 \u2261 0", x0 + size / 2, y0 + size / 2);
+      ctx.fillText("(запрет Паули)", x0 + size / 2, y0 + size / 2 + 18);
+    }
+    // right: spin states
+    const rx = w * 0.62;
+    ctx.fillStyle = T.text; ctx.font = "bold 13px sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "top";
+    ctx.fillText(sym ? "Симметрично (бозоны)" : "Антисимметрично (фермионы)", rx, y0 + 4);
+    ctx.fillStyle = T.textDim; ctx.font = "12px sans-serif";
+    ctx.fillText(sym ? "координатная часть чётная" : "координатная часть нечётная", rx, y0 + 26);
+    ctx.fillText(sym ? "\u21d2 спин: синглет (S=0)" : "\u21d2 спин: триплет (S=1)", rx, y0 + 46);
+    // arrows depiction
+    const ay = y0 + 96, asize = 26;
+    const drawSpins = (x, up1, up2, c) => {
+      arrow2(ctx, x, ay + (up1 ? asize : 0), x, ay + (up1 ? 0 : asize), c, 3, 7);
+      arrow2(ctx, x + 22, ay + (up2 ? asize : 0), x + 22, ay + (up2 ? 0 : asize), c, 3, 7);
+    };
+    if (sym) { drawSpins(rx + 10, false, true, T.accent3); ctx.fillStyle = T.textDim; ctx.font = "11px monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText("(\u2191\u2193 \u2212 \u2193\u2191)/\u221a2", rx + 56, ay + 6); }
+    else { drawSpins(rx + 10, true, true, T.accent4); ctx.fillStyle = T.textDim; ctx.font = "11px monospace"; ctx.textAlign = "left"; ctx.textBaseline = "top"; ctx.fillText("\u2191\u2191 ,  \u2193\u2193 ,  (\u2191\u2193+\u2193\u2191)/\u221a2", rx + 56, ay + 6); }
+    ctx.fillStyle = T.textDim; ctx.font = "11px sans-serif"; ctx.textBaseline = "top";
+    ctx.fillText(pauliZero ? "Одинаковые состояния (n\u2090=n_b)" : "Узел на диагонали x\u2081=x\u2082", rx, ay + 60);
+    ctx.fillText(pauliZero ? "\u2192 запрещено для фермионов" : (sym ? "\u2192 частицы «слипаются»" : "\u2192 фермионы избегают друг друга"), rx, ay + 80);
+  }, [theme, na, nb, sym]);
+  const T = theme;
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: T.textDim, lineHeight: 1.6, marginBottom: 14 }}>
+        Тождественные частицы неразличимы, поэтому при перестановке наблюдаемые не меняются — волновая функция может быть только <b style={{ color: T.accent }}>симметричной</b> (бозоны, целый спин) или <b style={{ color: T.accent3 }}>антисимметричной</b> (фермионы, полуцелый спин). У фермионов |ψ|² зануляется на диагонали x₁=x₂, а в одинаковом состоянии (nₐ=n_b) функция тождественно нулевая — это и есть запрет Паули.
+      </p>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, justifyContent: "center", flexWrap: "wrap" }}>
+        {[[false, "Фермионы (антисим.)"], [true, "Бозоны (сим.)"]].map(([k, lab]) => { const on = sym === k; return (
+          <button key={String(k)} onClick={() => setSym(k)} style={{ padding: "8px 16px", borderRadius: 8, border: `2px solid ${on ? T.accent : T.panelBorder}`, background: on ? T.accent + "2e" : T.btnBg, color: on ? T.accent : T.text, cursor: "pointer", fontSize: 13, fontWeight: on ? 700 : 500, boxShadow: on ? `0 0 0 2px ${T.accent}22` : "none" }}>{lab}</button>
+        ); })}
+        <button onClick={() => { setSym(false); setNa(2); setNb(2); }} style={{ padding: "7px 14px", borderRadius: 8, border: `1px solid ${T.warn}`, background: T.warn + "18", color: T.warn, cursor: "pointer", fontSize: 13, fontWeight: 600 }}>Паули: nₐ=n_b</button>
+      </div>
+      <Slider theme={T} label="Состояние частицы a (nₐ)" value={na} min={1} max={4} step={1} onChange={setNa} />
+      <Slider theme={T} label="Состояние частицы b (n_b)" value={nb} min={1} max={4} step={1} onChange={setNb} />
+      <StatRow theme={T} items={[
+        { l: "симметрия", v: sym ? "+ (бозон)" : "\u2212 (фермион)", c: sym ? T.accent : T.accent3 },
+        { l: "полный спин", v: sym ? "S=0" : "S=1", c: T.accent2 },
+        { l: "Паули", v: (!sym && na === nb) ? "запрет!" : "ok", c: (!sym && na === nb) ? T.warn : T.accent4 },
+      ]} />
+      <canvas ref={cv} style={cs(T, 300)} />
+      <InfoBox theme={T} text={
+        "Оператор перестановки в квадрате даёт единицу, поэтому его собственные значения ±1 — отсюда ровно два класса частиц. Полная ψ электронов антисимметрична: если спиновая часть симметрична (триплет S=1), то координатная антисимметрична, и наоборот (синглет S=0). «Слипание» бозонов лежит в основе лазеров и БЭК, а «избегание» фермионов — в основе устойчивости вещества и структуры таблицы Менделеева."
+      } />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 8: Обменное взаимодействие
+// ═══════════════════════════════════════════════════════════════════════
+function ExchangeTab({ theme }) {
+  const cv = useRef(null);
+  const [Jex, setJex] = useState(0.6);
+  useEffect(() => {
+    const cnv = cv.current; if (!cnv) return;
+    const { ctx, w, h } = setup(cnv);
+    const T = theme; ctx.clearRect(0, 0, w, h);
+    // energies: E_triplet = -Jex/2 ; E_singlet = +3Jex/2 (Heisenberg, E=-2J S1·S2)
+    const Et = -Jex / 2, Es = 1.5 * Jex;
+    const cx = w * 0.10, cw = w * 0.34, midY = h * 0.5, sc = h * 0.20;
+    ctx.strokeStyle = T.axis; ctx.lineWidth = 1; ctx.setLineDash([3, 3]);
+    ctx.beginPath(); ctx.moveTo(cx - 6, midY); ctx.lineTo(cx + cw + 30, midY); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = T.textDim; ctx.font = "10px sans-serif"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText("E\u2080 (без обмена)", cx + cw + 4, midY);
+    const yT = midY - Et * sc, yS = midY - Es * sc;
+    ctx.strokeStyle = T.accent4; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx, yT); ctx.lineTo(cx + cw, yT); ctx.stroke();
+    ctx.fillStyle = T.accent4; ctx.font = "12px monospace"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText("триплет S=1 (\u2191\u2191)", cx + cw + 4, yT);
+    ctx.strokeStyle = T.accent3; ctx.lineWidth = 3; ctx.beginPath(); ctx.moveTo(cx, yS); ctx.lineTo(cx + cw, yS); ctx.stroke();
+    ctx.fillStyle = T.accent3; ctx.fillText("синглет S=0 (\u2191\u2193)", cx + cw + 4, yS);
+    // gap arrow
+    ctx.strokeStyle = T.warn; ctx.lineWidth = 1; arrow2(ctx, cx + cw * 0.5, yT, cx + cw * 0.5, yS, T.warn, 1.4, 6);
+    arrow2(ctx, cx + cw * 0.5, yS, cx + cw * 0.5, yT, T.warn, 1.4, 6);
+    ctx.fillStyle = T.warn; ctx.font = "11px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.save(); ctx.translate(cx + cw * 0.5 - 12, (yT + yS) / 2); ctx.rotate(-Math.PI / 2); ctx.fillText("2J (обмен)", 0, 0); ctx.restore();
+    ctx.fillStyle = T.text; ctx.font = "12px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+    ctx.fillText(Jex > 0 ? "J > 0: ниже параллельные спины" : (Jex < 0 ? "J < 0: ниже антипараллельные" : "J = 0: вырождено"), cx + cw / 2, h * 0.12);
+    // right: spin lattice
+    const lx = w * 0.60, ly = h * 0.22, cols = 6, rows = 4, sp = Math.min((w * 0.36) / cols, (h * 0.5) / rows);
+    const ferro = Jex >= 0;
+    for (let i = 0; i < cols; i++) for (let k = 0; k < rows; k++) {
+      const X = lx + i * sp + sp / 2, Y = ly + k * sp + sp / 2;
+      const up = ferro ? true : ((i + k) % 2 === 0);
+      const c = ferro ? T.accent4 : T.accent3;
+      arrow2(ctx, X, Y + (up ? sp * 0.32 : -sp * 0.32), X, Y + (up ? -sp * 0.32 : sp * 0.32), c, 2.4, 6);
+    }
+    ctx.fillStyle = T.textDim; ctx.font = "12px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "top";
+    ctx.fillText(ferro ? "ферромагнетик (домен)" : "антиферромагнетик", lx + cols * sp / 2, ly + rows * sp + 8);
+  }, [theme, Jex]);
+  const T = theme;
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: T.textDim, lineHeight: 1.6, marginBottom: 14 }}>
+        Обменное взаимодействие — <b>не</b> отдельная сила: оно возникает из-за того, что ψ электронов антисимметрична, а они кулоновски отталкиваются. Энергия состояния зависит от взаимной ориентации спинов (через S₁·S₂ из вкладки 5): <b style={{ color: T.accent4 }}>триплет</b> и <b style={{ color: T.accent3 }}>синглет</b> расходятся на 2J. При J&gt;0 ниже параллельные спины — это и есть первое правило Хунда и причина ферромагнетизма.
+      </p>
+      <Slider theme={T} label="Обменный интеграл J" value={Jex} min={-1} max={1} step={0.05} onChange={setJex} format={v => v.toFixed(2)} />
+      <StatRow theme={T} items={[
+        { l: "E триплета", v: (-Jex / 2).toFixed(2), c: T.accent4 },
+        { l: "E синглета", v: (1.5 * Jex).toFixed(2), c: T.accent3 },
+        { l: "расщепление", v: (2 * Jex).toFixed(2), c: T.warn },
+        { l: "основное", v: Jex > 0 ? "триплет" : (Jex < 0 ? "синглет" : "—"), c: T.accent },
+      ]} />
+      <canvas ref={cv} style={cs(T, 290)} />
+      <InfoBox theme={T} text={
+        "Гамильтониан Гейзенберга H ∝ J·S₁·S₂ выводится из кулоновского матричного элемента между антисимметризованными состояниями: появляется обычный кулоновский интеграл плюс «обменный» интеграл, связанный с перекрытием. Знак J решает всё: J>0 выстраивает спины параллельно (ферромагнетизм, макс. спин по Хунду), J<0 — антипараллельно. Так чисто квантовый эффект (Паули + кулон) объясняет, почему железо магнитится."
+      } />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 9: Заполнение оболочек и правила Хунда
+// ═══════════════════════════════════════════════════════════════════════
+function AufbauTab({ theme }) {
+  const cv = useRef(null);
+  const [Z, setZ] = useState(7);
+  useEffect(() => {
+    const cnv = cv.current; if (!cnv) return;
+    const { ctx, w, h } = setup(cnv);
+    const T = theme; ctx.clearRect(0, 0, w, h);
+    // periodic table grid (top)
+    const cols = 18, rows = 4;
+    const gx0 = w * 0.02, gy0 = h * 0.04, gw = w * 0.96, gh = h * 0.52;
+    const cw = gw / cols, ch = gh / rows;
+    for (let z = 1; z <= 36; z++) {
+      const pos = ptPos(z); if (!pos) continue;
+      const [r, c] = pos;
+      const X = gx0 + (c - 1) * cw, Y = gy0 + (r - 1) * ch;
+      const cur = z === Z;
+      ctx.fillStyle = cur ? T.accent : T.panel;
+      ctx.fillRect(X + 1, Y + 1, cw - 2, ch - 2);
+      ctx.strokeStyle = cur ? T.accent : T.panelBorder; ctx.lineWidth = cur ? 2 : 1;
+      ctx.strokeRect(X + 1, Y + 1, cw - 2, ch - 2);
+      ctx.fillStyle = cur ? "#0a0e17" : T.textDim;
+      ctx.font = (cw > 30 ? "bold 11px sans-serif" : "bold 9px sans-serif"); ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(ELEM[z], X + cw / 2, Y + ch / 2);
+    }
+    // valence boxes (bottom)
+    const { valence } = fillAtom(Z);
+    if (valence) {
+      const { S, L, J, boxes } = hund(valence.l, valence.k);
+      const by = h * 0.74, bs = 30, n = boxes.length;
+      const totalW = n * (bs + 6);
+      const bx0 = w / 2 - totalW / 2;
+      ctx.fillStyle = T.text; ctx.font = "13px monospace"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      ctx.fillText("валентная подоболочка: " + valence.n + "spdf"[valence.l] + " (правила Хунда)", w / 2, by - bs * 0.7);
+      for (let i = 0; i < n; i++) {
+        const X = bx0 + i * (bs + 6);
+        ctx.strokeStyle = T.axis; ctx.lineWidth = 1.5; ctx.strokeRect(X, by, bs, bs);
+        const occ = boxes[i];
+        if (occ & 1) arrow2(ctx, X + bs * 0.34, by + bs * 0.82, X + bs * 0.34, by + bs * 0.18, T.accent, 2.4, 6);
+        if (occ & 2) arrow2(ctx, X + bs * 0.66, by + bs * 0.18, X + bs * 0.66, by + bs * 0.82, T.accent3, 2.4, 6);
+      }
+    } else {
+      ctx.fillStyle = T.textDim; ctx.font = "13px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText("—", w / 2, h * 0.78);
+    }
+  }, [theme, Z]);
+  const T = theme;
+  const { config, valence } = fillAtom(Z);
+  const sup = k => String(k).split("").map(d => "\u2070\u00b9\u00b2\u00b3\u2074\u2075\u2076\u2077\u2078\u2079"[+d]).join("");
+  const cfgStr = config.map(c => c.n + "spdf"[c.l] + sup(c.k)).join(" ");
+  const term = valence ? hund(valence.l, valence.k) : { S: 0, L: 0, J: 0 };
+  const mult = 2 * term.S + 1;
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: T.textDim, lineHeight: 1.6, marginBottom: 14 }}>
+        Электроны заполняют оболочки по возрастанию энергии (<b>правило Клечковского</b>: меньше n+l — раньше), а внутри подоболочки слушаются <b style={{ color: T.accent }}>правил Хунда</b>: сначала по одному с параллельными спинами (макс. спин — следствие обмена), потом спариваются. Так из чисто квантовых принципов вырастает «школьная» таблица Менделеева и основной терм атома.
+      </p>
+      <Slider theme={T} label="Заряд ядра Z (элемент)" value={Z} min={1} max={36} step={1} onChange={setZ} format={v => v + " — " + (ELEMNAME[v] || ELEM[v])} />
+      <StatRow theme={T} items={[
+        { l: "элемент", v: ELEM[Z], c: T.accent },
+        { l: "S (спин)", v: fmtHalf(term.S), c: T.accent4 },
+        { l: "L", v: LSYM[term.L] || String(term.L), c: T.accent2 },
+        { l: "J", v: fmtHalf(term.J), c: T.warn },
+      ]} />
+      <canvas ref={cv} style={cs(T, 340)} />
+      <div style={{ marginTop: 12, textAlign: "center" }}>
+        <div style={{ fontSize: 12, color: T.textDim, marginBottom: 4 }}>Электронная конфигурация:</div>
+        <div style={{ fontSize: 15, fontFamily: "monospace", color: T.text, fontWeight: 600, lineHeight: 1.5 }}>{cfgStr}</div>
+        <div style={{ marginTop: 10, fontSize: 12, color: T.textDim }}>Основной терм:</div>
+        <div style={{ fontSize: 26, fontFamily: "monospace", color: T.accent, fontWeight: 700 }}>
+          <sup style={{ fontSize: 15 }}>{mult}</sup>{LSYM[term.L] || term.L}<sub style={{ fontSize: 15 }}>{fmtHalf(term.J)}</sub>
+        </div>
+      </div>
+      <InfoBox theme={T} text={
+        "Терм ²ˢ⁺¹L_J — это «паспорт» атома: полный спин S, орбитальный момент L и их сумма J всех электронов. Правило Хунда для J: при заполнении оболочки менее чем наполовину J=|L−S|, иначе J=L+S. Показанные конфигурации — идеализация по Клечковскому; у некоторых элементов (Cr, Cu) реальное основное состояние отличается из-за тонкой конкуренции энергий. Переходы между термами и определяют спектры и химию сложных атомов."
+      } />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// APP SHELL
+// ═══════════════════════════════════════════════════════════════════════
+function App() {
+  const [themeKey, setThemeKey] = useState("dark");
+  const [tab, setTab] = useState("gyro");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const t = THEMES[themeKey];
+  const currentTab = TABS.find(tb => tb.id === tab);
+  return (
+    <div data-theme={themeKey} style={{ minHeight: "100vh", background: t.bg, color: t.text, fontFamily: "'Segoe UI','Noto Sans',system-ui,sans-serif", transition: "background 0.3s, color 0.3s", padding: "20px 16px" }}>
+      <style>{`
+        input[type=range]::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; border-radius: 50%; background: ${t.sliderThumb}; cursor: pointer; box-shadow: 0 0 6px ${t.sliderThumb}88; }
+        input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; border: none; background: ${t.sliderThumb}; cursor: pointer; }
+        * { box-sizing: border-box; } ::selection { background: ${t.accent}44; }
+      `}</style>
+      <div style={{ maxWidth: 960, margin: "0 auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}><span style={{ color: t.accent }}>⚛</span> Спин и сложные атомы <span style={{ color: t.accent }}>⚛</span></h1>
+            <div style={{ fontSize: 12, color: t.textDim, marginTop: 2 }}>Интерактивные демонстрации · Лекция 7</div>
+          </div>
+          <button onClick={() => setThemeKey(themeKey === "dark" ? "light" : "dark")} style={{ padding: "6px 14px", borderRadius: 20, border: `1px solid ${t.panelBorder}`, background: t.btnBg, color: t.text, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
+            {themeKey === "dark" ? "☀ Светлая" : "🌙 Тёмная"}
+          </button>
+        </div>
+        <div style={{ position: "relative", marginBottom: 20 }}>
+          <button onClick={() => setMenuOpen(!menuOpen)} style={{
+            width: "100%", padding: "12px 18px", borderRadius: 10,
+            border: `1px solid ${t.dropBorder}`, background: t.dropBg,
+            color: t.text, cursor: "pointer", fontSize: 15, fontWeight: 600,
+            display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: t.shadow
+          }}>
+            <span><span style={{ color: t.accent, marginRight: 8 }}>▸</span>{currentTab?.label}</span>
+            <span style={{ color: t.textDim, fontSize: 12, transform: menuOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>▼</span>
+          </button>
+          {menuOpen && (
+            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4, zIndex: 100, background: t.dropBg, border: `1px solid ${t.dropBorder}`, borderRadius: 10, boxShadow: t.shadow, overflow: "hidden" }}>
+              {TABS.map(tb => (
+                <button key={tb.id} onClick={() => { setTab(tb.id); setMenuOpen(false); }} style={{
+                  width: "100%", padding: "11px 18px", border: "none", cursor: "pointer",
+                  background: tab === tb.id ? t.accent + "22" : "transparent",
+                  color: tab === tb.id ? t.accent : t.text,
+                  fontSize: 14, fontWeight: tab === tb.id ? 700 : 400,
+                  textAlign: "left", display: "block", borderBottom: `1px solid ${t.dropBorder}22`
+                }}
+                  onMouseEnter={e => { if (tab !== tb.id) e.target.style.background = t.accent + "11"; }}
+                  onMouseLeave={e => { if (tab !== tb.id) e.target.style.background = "transparent"; }}
+                >{tb.label}</button>
+              ))}
+            </div>
+          )}
+        </div>
+        {menuOpen && <div style={{ position: "fixed", inset: 0, zIndex: 99 }} onClick={() => setMenuOpen(false)} />}
+        <div style={{ background: t.panel, borderRadius: 14, padding: 24, border: `1px solid ${t.panelBorder}`, boxShadow: t.shadow }}>
+          {tab === "gyro" && <GyroTab theme={t} />}
+          {tab === "edh" && <EdhTab theme={t} />}
+          {tab === "sg" && <SgTab theme={t} />}
+          {tab === "addvec" && <AddVecTab theme={t} />}
+          {tab === "addgrid" && <AddGridTab theme={t} />}
+          {tab === "fine" && <FineTab theme={t} />}
+          {tab === "pauli" && <PauliTab theme={t} />}
+          {tab === "exchange" && <ExchangeTab theme={t} />}
+          {tab === "aufbau" && <AufbauTab theme={t} />}
+        </div>
+        <div style={{ textAlign: "center", fontSize: 11, color: t.textDim, marginTop: 16, opacity: 0.6 }}>
+          Лекция 7 · Спин и сложные атомы · 9 интерактивных демонстраций · Innopolis 2025
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(App));
+  </script>
+</body>
+</html>

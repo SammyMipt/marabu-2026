@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Фотоэффект и эффект Комптона — Интерактивные демонстрации</title>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <style>html,body,#root{margin:0;padding:0}</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+const { useState, useRef, useEffect, useCallback, useMemo } = React;
+
+const TH={
+  dark:{bg:"#0a0e17",panel:"#111827",panelBorder:"#1e293b",text:"#e2e8f0",textDim:"#94a3b8",accent:"#22d3ee",accent2:"#a78bfa",accent3:"#f472b6",accent4:"#34d399",warn:"#fbbf24",grid:"#1e293b",axis:"#475569",canvasBg:"#0f172a",trace1:"#22d3ee",trace2:"#f472b6",trace3:"#a78bfa",trace4:"#34d399",trace5:"#fbbf24",btnBg:"#1e293b",sliderTrack:"#334155",sliderThumb:"#22d3ee",shadow:"0 4px 24px rgba(0,0,0,0.5)",dropBg:"#1e293b",dropBorder:"#334155"},
+  light:{bg:"#f8fafc",panel:"#ffffff",panelBorder:"#e2e8f0",text:"#1e293b",textDim:"#64748b",accent:"#0891b2",accent2:"#7c3aed",accent3:"#db2777",accent4:"#059669",warn:"#d97706",grid:"#e2e8f0",axis:"#94a3b8",canvasBg:"#f1f5f9",trace1:"#0891b2",trace2:"#db2777",trace3:"#7c3aed",trace4:"#059669",trace5:"#d97706",btnBg:"#e2e8f0",sliderTrack:"#cbd5e1",sliderThumb:"#0891b2",shadow:"0 4px 24px rgba(0,0,0,0.08)",dropBg:"#ffffff",dropBorder:"#e2e8f0"}
+};
+
+const TABS=[
+  {id:"photo",label:"1. Фотоэффект: энергия + ВАХ"},
+  {id:"millikan",label:"2. Прямая Милликена → измерение ħ"},
+  {id:"compton",label:"3. Эффект Комптона: рассеяние"},
+  {id:"debroglie",label:"4. Длина волны де Бройля: масштабы"},
+  {id:"hitachi",label:"5. Накопление картины (опыт HITACHI)"},
+  {id:"davisson",label:"6. Дифракция электронов: λ ∝ 1/√U"},
+  {id:"uncertainty",label:"7. Принцип неопределённости"},
+];
+
+// ── physical constants (SI) ──
+const Hpl=6.626e-34, Hbar=1.0546e-34, Cl=2.998e8, Me=9.109e-31, Mp=1.673e-27, Ec=1.602e-19;
+const LamC=Hpl/(Me*Cl);          // Compton wavelength 2.426 pm
+const eV=Ec;
+
+function Sl({label,value,min,max,step,onChange,theme,unit="",format}){return(<div style={{marginBottom:10}}><div style={{display:"flex",justifyContent:"space-between",fontSize:13,color:theme.textDim,marginBottom:3}}><span>{label}</span><span style={{color:theme.accent,fontFamily:"monospace",fontWeight:600}}>{format?format(value):value}{unit}</span></div><input type="range" min={min} max={max} step={step} value={value} onChange={e=>onChange(Number(e.target.value))} style={{width:"100%",height:6,appearance:"none",background:theme.sliderTrack,borderRadius:3,outline:"none",cursor:"pointer",accentColor:theme.sliderThumb}}/></div>)}
+function Info({text,theme}){return <div style={{padding:"10px 14px",borderRadius:8,fontSize:13,lineHeight:1.6,background:theme.accent+"11",border:`1px solid ${theme.accent}33`,color:theme.textDim,marginTop:10}}>{"💡"} {text}</div>}
+function Lb({children}){return <div style={{fontSize:11,marginBottom:4,textTransform:"uppercase",letterSpacing:1,opacity:0.6}}>{children}</div>}
+const cs=(t,h=220)=>({width:"100%",height:h,borderRadius:8,background:t.canvasBg,border:`1px solid ${t.panelBorder}`,display:"block"});
+function su(c){const d=window.devicePixelRatio||1,r=c.getBoundingClientRect();c.width=r.width*d;c.height=r.height*d;const x=c.getContext("2d");x.scale(d,d);return{ctx:x,w:r.width,h:r.height}}
+function gr(ctx,w,h,t){ctx.strokeStyle=t.grid;ctx.lineWidth=0.5;for(let i=0;i<=8;i++){ctx.beginPath();ctx.moveTo((i/8)*w,0);ctx.lineTo((i/8)*w,h);ctx.stroke()}for(let i=0;i<=4;i++){ctx.beginPath();ctx.moveTo(0,(i/4)*h);ctx.lineTo(w,(i/4)*h);ctx.stroke()}}
+function Card({items,theme}){return(<div style={{display:"flex",gap:12,marginBottom:14,justifyContent:"center",flexWrap:"wrap"}}>{items.map((it,i)=>(<div key={i} style={{textAlign:"center",padding:"5px 12px",borderRadius:8,background:it.c+"11",border:`1px solid ${it.c}33`}}><div style={{fontSize:10,color:theme.textDim}}>{it.l}</div><div style={{fontSize:15,fontWeight:700,color:it.c,fontFamily:"monospace"}}>{it.v}</div></div>))}</div>)}
+function arrow2(ctx,x0,y0,x1,y1,col,w){ctx.strokeStyle=col;ctx.fillStyle=col;ctx.lineWidth=w||1.4;ctx.beginPath();ctx.moveTo(x0,y0);ctx.lineTo(x1,y1);ctx.stroke();const a=Math.atan2(y1-y0,x1-x0),hh=7;ctx.beginPath();ctx.moveTo(x1,y1);ctx.lineTo(x1-hh*Math.cos(a-0.4),y1-hh*Math.sin(a-0.4));ctx.lineTo(x1-hh*Math.cos(a+0.4),y1-hh*Math.sin(a+0.4));ctx.closePath();ctx.fill();}
+
+// Wavelength (nm) → [r,g,b] each 0..1
+function lamRGB(lam){let r=0,g=0,b=0;if(lam>=380&&lam<440){r=(440-lam)/60;b=1}else if(lam<490){g=(lam-440)/50;b=1}else if(lam<510){g=1;b=(510-lam)/20}else if(lam<580){r=(lam-510)/70;g=1}else if(lam<645){r=1;g=(645-lam)/65}else if(lam<=750){r=1}let f=1;if(lam<420)f=0.3+0.7*(lam-380)/40;else if(lam>700)f=0.3+0.7*(750-lam)/50;return[r*f,g*f,b*f]}
+function lamCSS(lam){const[r,g,b]=lamRGB(lam);return`rgb(${(r*255)|0},${(g*255)|0},${(b*255)|0})`}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 1. PHOTOELECTRIC EFFECT: energy diagram + I–V characteristic
+// ═══════════════════════════════════════════════════════════════════════
+const MATERIALS=[
+  {name:"Цезий Cs",A:2.1},{name:"Натрий Na",A:2.28},{name:"Калий K",A:2.3},
+  {name:"Цинк Zn",A:4.3},{name:"Медь Cu",A:4.7},{name:"Платина Pt",A:5.65},
+];
+function PhotoTab({theme}){
+  const[lam,setLam]=useState(300);     // nm
+  const[inten,setInten]=useState(0.6); // 0..1
+  const[mi,setMi]=useState(0);         // material index
+  const eRef=useRef(null), iRef=useRef(null);
+  const A=MATERIALS[mi].A;
+  const Eph=Hpl*Cl/(lam*1e-9)/eV;      // photon energy, eV
+  const Tmax=Eph-A;                     // max kinetic energy, eV (may be <0)
+  const emits=Tmax>0;
+  const lam0=Hpl*Cl/(A*eV)*1e9;         // threshold wavelength, nm
+
+  // energy bar diagram
+  const drawE=useCallback(()=>{
+    if(!eRef.current)return;const c=su(eRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const mL=70,mB=24,mT=14;const W=c.w-mL-20,H=c.h-mB-mT;
+    const Emax=8;                       // eV full scale
+    const Y=e=>mT+(1-e/Emax)*H;
+    // vacuum level (0) and Fermi level (-A) — but we draw energies upward from Fermi sea top
+    // bars: [photon hν] [work function A] [kinetic Tmax]
+    const bx=mL, bw=58, gap=46;
+    x.strokeStyle=theme.axis;x.lineWidth=1;x.beginPath();x.moveTo(mL,mT);x.lineTo(mL,mT+H);x.lineTo(mL+W,mT+H);x.stroke();
+    x.fillStyle=theme.textDim;x.font="10px monospace";x.textAlign="right";
+    for(let e=0;e<=Emax;e+=2){x.fillText(e,mL-6,Y(e)+3);}
+    x.save();x.translate(16,mT+H/2);x.rotate(-Math.PI/2);x.textAlign="center";x.fillText("энергия, эВ",0,0);x.restore();
+    function bar(i,val,col,lab){const xx=bx+i*(bw+gap);const yt=Y(Math.max(0,val));x.fillStyle=col+"55";x.fillRect(xx,yt,bw,Y(0)-yt);x.strokeStyle=col;x.lineWidth=2;x.strokeRect(xx,yt,bw,Y(0)-yt);x.fillStyle=col;x.font="bold 12px monospace";x.textAlign="center";x.fillText(val.toFixed(2),xx+bw/2,yt-6);x.fillStyle=theme.text;x.font="11px monospace";x.fillText(lab,xx+bw/2,mT+H+16);}
+    bar(0,Eph,theme.trace1,"ħω");
+    bar(1,A,theme.warn,"A");
+    bar(2,Math.max(0,Tmax),emits?theme.accent4:theme.trace2,"Tₑ");
+    // equation line on top
+    x.textAlign="left";x.font="bold 12px monospace";x.fillStyle=emits?theme.accent4:theme.trace2;
+    x.fillText(emits?"ħω = A + Tₑ  → электрон вылетает":"ħω < A  → электронов нет (ниже красной границы)",mL+4,mT+10);
+  },[lam,mi,theme,Eph,A,Tmax,emits]);
+
+  // I–V characteristic
+  const drawIV=useCallback(()=>{
+    if(!iRef.current)return;const c=su(iRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const mL=40,mB=28,mT=14;const W=c.w-mL-16,H=c.h-mB-mT;
+    const Vmin=-3,Vmax=4;             // volts
+    const Isat=emits?inten:0;          // saturation current ∝ intensity
+    const V0=emits?Tmax:0;             // stopping voltage = Tmax/e (eV→V)
+    const X=v=>mL+((v-Vmin)/(Vmax-Vmin))*W, Y=i=>mT+(1-i/1.15)*H;
+    // axes
+    x.strokeStyle=theme.axis;x.lineWidth=1;x.beginPath();x.moveTo(X(Vmin),Y(0));x.lineTo(X(Vmax),Y(0));x.stroke();
+    x.beginPath();x.moveTo(X(0),mT);x.lineTo(X(0),mT+H);x.stroke();
+    x.fillStyle=theme.textDim;x.font="10px monospace";x.textAlign="center";
+    for(let v=Vmin;v<=Vmax;v++){if(v!==0)x.fillText(v,X(v),Y(0)+14);}
+    x.fillText("U, В",X(Vmax)-8,Y(0)+22);x.textAlign="left";x.fillText("ток I",X(0)+6,mT+10);
+    // I(V): 0 for V<-V0, smoothly rises to Isat
+    if(emits){
+      x.strokeStyle=theme.accent;x.lineWidth=2.6;x.beginPath();let started=false;
+      for(let i=0;i<=400;i++){const v=Vmin+(Vmax-Vmin)*i/400;let I;
+        if(v<=-V0)I=0; else {const t=(v+V0)/(V0+1.2);I=Isat*(1-Math.exp(-3.2*Math.max(0,t)));}
+        const xx=X(v),yy=Y(Math.min(I,Isat));if(!started){x.moveTo(xx,yy);started=true}else x.lineTo(xx,yy);}
+      x.stroke();
+      // stopping voltage marker
+      x.strokeStyle=theme.trace2;x.setLineDash([4,4]);x.lineWidth=1.4;x.beginPath();x.moveTo(X(-V0),mT);x.lineTo(X(-V0),Y(0));x.stroke();x.setLineDash([]);
+      x.fillStyle=theme.trace2;x.font="bold 10px monospace";x.textAlign="center";x.fillText("−V₀="+(-V0).toFixed(2)+"В",X(-V0),mT+H-4);
+      // saturation line
+      x.strokeStyle=theme.accent4;x.setLineDash([2,3]);x.beginPath();x.moveTo(X(0),Y(Isat));x.lineTo(X(Vmax),Y(Isat));x.stroke();x.setLineDash([]);
+      x.fillStyle=theme.accent4;x.textAlign="right";x.fillText("I_нас ∝ интенсивность",X(Vmax)-4,Y(Isat)-5);
+    } else {
+      x.fillStyle=theme.trace2;x.font="12px monospace";x.textAlign="center";x.fillText("тока нет (ω < ω₀)",X(0)+W*0.3,mT+H/2);
+    }
+  },[lam,inten,mi,theme,emits,Tmax]);
+
+  useEffect(()=>{drawE();drawIV();const h=()=>{drawE();drawIV()};window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h)},[drawE,drawIV]);
+
+  return(<div>
+    <p style={{fontSize:14,color:theme.textDim,marginBottom:16,lineHeight:1.6}}>Свет выбивает электроны из металла. Эйнштейн объяснил это так: один фотон энергии ħω целиком поглощается электроном, тратится на работу выхода A и кинетическую энергию: <b>ħω = A + Tₑ</b>. Отсюда сразу следуют все «загадки»: красная граница (если ħω &lt; A — электронов нет при любой яркости), независимость энергии электронов от интенсивности и линейная связь запирающего напряжения с частотой.</p>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:12,marginBottom:8}}>
+      <Sl label="λ — длина волны света" value={lam} min={120} max={700} step={2} onChange={setLam} theme={theme} unit=" нм"/>
+      <Sl label="Интенсивность света" value={inten} min={0.1} max={1} step={0.05} onChange={setInten} theme={theme} format={v=>(v*100).toFixed(0)+"%"}/>
+      <div>
+        <div style={{fontSize:13,color:theme.textDim,marginBottom:3}}>Материал катода</div>
+        <select value={mi} onChange={e=>setMi(+e.target.value)} style={{width:"100%",padding:"6px",borderRadius:8,background:theme.btnBg,color:theme.text,border:`1px solid ${theme.panelBorder}`,fontSize:13}}>
+          {MATERIALS.map((m,i)=><option key={i} value={i}>{m.name} (A={m.A} эВ)</option>)}
+        </select>
+      </div>
+    </div>
+
+    <Card items={[
+      {l:"Энергия фотона",v:Eph.toFixed(2)+" эВ",c:theme.trace1},
+      {l:"Работа выхода",v:A.toFixed(2)+" эВ",c:theme.warn},
+      {l:"T_max электрона",v:emits?Tmax.toFixed(2)+" эВ":"—",c:emits?theme.accent4:theme.trace2},
+      {l:"Красная граница λ₀",v:lam0.toFixed(0)+" нм",c:theme.accent2},
+    ]} theme={theme}/>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      <div><Lb>Энергетический баланс ħω = A + Tₑ</Lb><canvas ref={eRef} style={cs(theme,260)}/></div>
+      <div><Lb>Вольт-амперная характеристика</Lb><canvas ref={iRef} style={cs(theme,260)}/></div>
+    </div>
+
+    <Info text={emits
+      ?"Двигайте λ: чем короче волна (выше частота), тем больше Tₑ и тем глубже запирающее напряжение −V₀ (eV₀ = Tₑ). Интенсивность меняет только высоту тока насыщения (число электронов), но НЕ V₀ — энергия каждого электрона от яркости не зависит. Это и был ключевой парадокс для классики."
+      :"Сейчас ħω < A — фотон слишком «мягкий», и сколько бы мы ни увеличивали яркость, ни один электрон не вылетит. Это красная граница ω₀ = A/ħ (здесь λ₀ = "+lam0.toFixed(0)+" нм). Укоротите волну, чтобы перейти границу."}
+      theme={theme}/>
+  </div>);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 2. MILLIKAN LINE: stopping voltage vs frequency → slope = h/e
+// ═══════════════════════════════════════════════════════════════════════
+function MillikanTab({theme}){
+  const[mi,setMi]=useState(1);
+  const cRef=useRef(null);
+  const A=MATERIALS[mi].A;
+  const f0=A*eV/Hpl;                  // threshold frequency, Hz
+
+  const draw=useCallback(()=>{
+    if(!cRef.current)return;const c=su(cRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const mL=46,mB=34,mT=14;const W=c.w-mL-16,H=c.h-mB-mT;
+    const fMax=1.6e15;                 // Hz
+    const V0Max=4;                     // V
+    const X=f=>mL+(f/fMax)*W, Y=v=>mT+(1-v/V0Max)*H;
+    // axes
+    x.strokeStyle=theme.axis;x.lineWidth=1;x.beginPath();x.moveTo(mL,mT);x.lineTo(mL,mT+H);x.lineTo(mL+W,mT+H);x.stroke();
+    x.fillStyle=theme.textDim;x.font="10px monospace";x.textAlign="center";
+    for(let f=0;f<=1.6;f+=0.4){x.fillText(f.toFixed(1),X(f*1e15),mT+H+14);}
+    x.fillText("частота ν, ПГц (×10¹⁵)",mL+W/2,mT+H+28);
+    x.save();x.translate(15,mT+H/2);x.rotate(-Math.PI/2);x.fillText("запирающее U₀, В",0,0);x.restore();
+    // line V0 = (h/e) f - A/e  for f>f0
+    const slope=Hpl/eV;                // V per Hz
+    x.strokeStyle=theme.accent;x.lineWidth=2.6;x.beginPath();let started=false;
+    for(let i=0;i<=300;i++){const f=fMax*i/300;const V0=slope*f-A;if(V0<0||V0>V0Max){if(V0>V0Max)break;started=false;continue}const xx=X(f),yy=Y(V0);if(!started){x.moveTo(xx,yy);started=true}else x.lineTo(xx,yy);}
+    x.stroke();
+    // threshold dot on x-axis
+    x.fillStyle=theme.trace2;x.beginPath();x.arc(X(f0),Y(0),4,0,2*Math.PI);x.fill();
+    x.fillStyle=theme.trace2;x.font="bold 10px monospace";x.fillText("ν₀ (красная граница)",X(f0),Y(0)+13);
+    // slope triangle illustration around mid
+    const fa=0.9e15, fb=1.3e15; const Va=slope*fa-A, Vb=slope*fb-A;
+    if(Va>0&&Vb>0){x.strokeStyle=theme.accent4;x.setLineDash([4,3]);x.lineWidth=1.3;x.beginPath();x.moveTo(X(fa),Y(Va));x.lineTo(X(fb),Y(Va));x.lineTo(X(fb),Y(Vb));x.stroke();x.setLineDash([]);
+      x.fillStyle=theme.accent4;x.textAlign="left";x.fillText("наклон = ħ/e",X(fb)+6,Y((Va+Vb)/2));}
+    // legend
+    x.fillStyle=theme.accent;x.textAlign="left";x.font="11px monospace";x.fillText("eU₀ = ħω − A",mL+8,mT+12);
+  },[mi,theme,A,f0]);
+  useEffect(()=>{draw();const h=()=>draw();window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h)},[draw]);
+
+  return(<div>
+    <p style={{fontSize:14,color:theme.textDim,marginBottom:16,lineHeight:1.6}}>Запирающее напряжение связано с энергией электронов: <b>eU₀ = ħω − A</b>. Значит, если откладывать U₀ против частоты ν, получится <b>прямая</b> с наклоном ħ/e — одинаковым для всех материалов (меняется лишь точка пересечения с осью, т.е. красная граница). Именно по наклону этой прямой Милликен в 1916 г. измерил постоянную Планка с точностью лучше 0.5% — хотя начинал с целью опровергнуть теорию Эйнштейна.</p>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr",gap:12,marginBottom:8,maxWidth:380}}>
+      <div>
+        <div style={{fontSize:13,color:theme.textDim,marginBottom:3}}>Материал катода (сдвигает прямую вправо)</div>
+        <select value={mi} onChange={e=>setMi(+e.target.value)} style={{width:"100%",padding:"6px",borderRadius:8,background:theme.btnBg,color:theme.text,border:`1px solid ${theme.panelBorder}`,fontSize:13}}>
+          {MATERIALS.map((m,i)=><option key={i} value={i}>{m.name} (A={m.A} эВ)</option>)}
+        </select>
+      </div>
+    </div>
+
+    <Card items={[
+      {l:"Наклон ħ/e",v:"4.14·10⁻¹⁵ В/Гц",c:theme.accent4},
+      {l:"Работа выхода A",v:A.toFixed(2)+" эВ",c:theme.warn},
+      {l:"Красная граница ν₀",v:(f0/1e15).toFixed(3)+"·10¹⁵ Гц",c:theme.trace2},
+      {l:"⇒ постоянная Планка",v:"ħ = e·(наклон)",c:theme.accent},
+    ]} theme={theme}/>
+
+    <div><Lb>Запирающее напряжение U₀ от частоты ν</Lb><canvas ref={cRef} style={cs(theme,300)}/></div>
+
+    <Info text={"Все материалы дают прямые с ОДНИМ наклоном ħ/e ≈ 4.14·10⁻¹⁵ В/Гц — это универсальная константа. Работа выхода A влияет только на сдвиг (точку пересечения с осью частот = красную границу ν₀ = A/ħ). Измерив наклон dU₀/dν, получаем ħ = e·dU₀/dν — это и сделал Милликен. Поразительно: его прецизионные опыты, задуманные как опровержение, стали лучшим подтверждением квантовой природы света."} theme={theme}/>
+  </div>);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 3. COMPTON SCATTERING: diagram + Δλ(θ) + spectrum shift
+// ═══════════════════════════════════════════════════════════════════════
+function ComptonTab({theme}){
+  const[thetaDeg,setTheta]=useState(90);
+  const lam1pm=71;                       // incident X-ray fixed (Mo Kα ≈ 71 pm)
+  const dRef=useRef(null), sRef=useRef(null);
+  const th=thetaDeg*Math.PI/180;
+  const dLam=LamC*(1-Math.cos(th));      // m
+  const lam1=lam1pm*1e-12, lam2=lam1+dLam;
+  const E1=Hpl*Cl/lam1/eV/1000, E2=Hpl*Cl/lam2/eV/1000; // keV
+  const Te=E1-E2;                         // keV to electron
+  // визуальная метафора «покраснения»: фотон теряет энергию с ростом θ.
+  // frac=0 при θ=0 (как падающий, голубой), frac=1 при θ=180° (максимальный сдвиг, красный).
+  const redFrac=dLam/(2*LamC);           // 0..1
+  function mix(a,b,t){return [a[0]+(b[0]-a[0])*t,a[1]+(b[1]-a[1])*t,a[2]+(b[2]-a[2])*t];}
+  const incidentRGB=[120,210,255];       // голубовато-белый «жёсткий» рентген
+  const redRGB=[240,90,70];              // «покрасневший» рассеянный
+  const scatRGB=mix(incidentRGB,redRGB,redFrac);
+  const scatCSS=`rgb(${scatRGB[0]|0},${scatRGB[1]|0},${scatRGB[2]|0})`;
+  const incCSS=`rgb(${incidentRGB[0]},${incidentRGB[1]},${incidentRGB[2]})`;
+
+  // scattering diagram
+  const drawD=useCallback(()=>{
+    if(!dRef.current)return;const c=su(dRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const ox=c.w*0.40, oy=c.h*0.52, L=Math.min(c.w,c.h)*0.30;
+    // electron at rest (target)
+    x.fillStyle=theme.textDim;x.beginPath();x.arc(ox,oy,7,0,2*Math.PI);x.fill();
+    x.fillStyle=theme.text;x.font="11px monospace";x.textAlign="center";x.fillText("e⁻ (покой)",ox,oy+22);
+    const col1=incCSS, col2=scatCSS;
+    // wavy incoming (wavelength ∝ λ1 fixed) — tighter wave
+    function wave(x0,y0,x1,y1,col,amp,waveLenPx){const dx=x1-x0,dy=y1-y0,len=Math.hypot(dx,dy),n=Math.max(8,Math.round(len/3));x.strokeStyle=col;x.lineWidth=2;x.beginPath();const k=2*Math.PI/waveLenPx;for(let i=0;i<=n;i++){const t=i/n;const px=x0+dx*t,py=y0+dy*t;const off=Math.sin(t*len*k)*amp;const nx=-dy/len,ny=dx/len;if(i===0)x.moveTo(px+nx*off,py+ny*off);else x.lineTo(px+nx*off,py+ny*off);}x.stroke();}
+    // incident wave: wavelength ~ proportional to λ1 (fixed) → fixed px period
+    wave(ox-L*1.4,oy,ox,oy,col1,3,14);
+    arrow2(x,ox-18,oy,ox-2,oy,col1,2);
+    x.fillStyle=col1;x.textAlign="left";x.font="11px monospace";x.fillText("фотон λ₁ (рентген)",ox-L*1.4,oy-10);
+    // scattered photon at angle theta (up-right); wave period grows with λ2 (visual reddening)
+    const sx=ox+L*Math.cos(-th), sy=oy+L*Math.sin(-th);
+    const periodScat=14*(lam2/lam1);     // longer wavelength → longer period
+    wave(ox,oy,sx,sy,col2,3,periodScat);arrow2(x,sx-14*Math.cos(-th),sy-14*Math.sin(-th),sx,sy,col2,2);
+    x.fillStyle=col2;x.fillText("λ₂ > λ₁",sx+4,sy-4);
+    // recoil electron (momentum conservation: opposite transverse)
+    const ang_e=0.5*th+0.0001;
+    const ex=ox+L*0.8*Math.cos(ang_e), ey=oy+L*0.8*Math.sin(ang_e);
+    arrow2(x,ox,oy,ex,ey,theme.accent4,2);
+    x.fillStyle=theme.accent4;x.fillText("e⁻ отдачи",ex+4,ey+4);
+    // angle arc
+    x.strokeStyle=col2;x.lineWidth=1.3;x.beginPath();x.arc(ox,oy,26,0,-th,true);x.stroke();
+    x.fillStyle=col2;x.textAlign="center";x.fillText("θ",ox+34*Math.cos(-th/2),oy+34*Math.sin(-th/2));
+  },[thetaDeg,theme,th,scatCSS,incCSS,lam2,lam1]);
+
+  // Δλ(θ) curve + scattered spectrum (two lines)
+  const drawS=useCallback(()=>{
+    if(!sRef.current)return;const c=su(sRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const mL=42,mB=28,mT=14;const W=c.w-mL-14,H=c.h-mB-mT;
+    // top 60%: Δλ vs θ ; we instead show spectrum: intensity vs wavelength with 2 peaks
+    const lamMinPm=lam1pm-2, lamMaxPm=lam1pm+2*LamC*1e12+2;
+    const X=l=>mL+((l-lamMinPm)/(lamMaxPm-lamMinPm))*W, Y=v=>mT+(1-v)*H;
+    x.strokeStyle=theme.axis;x.lineWidth=1;x.beginPath();x.moveTo(mL,mT);x.lineTo(mL,mT+H);x.lineTo(mL+W,mT+H);x.stroke();
+    x.fillStyle=theme.textDim;x.font="10px monospace";x.textAlign="center";
+    for(let k=0;k<=4;k++){const l=lamMinPm+(lamMaxPm-lamMinPm)*k/4;x.fillText(l.toFixed(1),X(l),mT+H+14);}
+    x.fillText("λ рассеянного, пм",mL+W/2,mT+H+26);x.save();x.translate(14,mT+H/2);x.rotate(-Math.PI/2);x.fillText("интенсивность",0,0);x.restore();
+    function peak(l0,amp,col,lab){const sg=0.18;x.strokeStyle=col;x.lineWidth=2.2;x.beginPath();for(let i=0;i<=240;i++){const l=lamMinPm+(lamMaxPm-lamMinPm)*i/240;const v=amp*Math.exp(-((l-l0)**2)/(2*sg*sg));const xx=X(l),yy=Y(v);if(i===0)x.moveTo(xx,yy);else x.lineTo(xx,yy);}x.stroke();x.fillStyle=col;x.font="bold 10px monospace";x.textAlign="center";x.fillText(lab,X(l0),Y(amp)-6);}
+    peak(lam1pm,0.85,incCSS,"λ₁ (несмещ.)");
+    peak(lam2*1e12,0.7,scatCSS,"λ₂ (Комптон)");
+    // shift bracket
+    x.strokeStyle=theme.trace2;x.setLineDash([3,3]);x.lineWidth=1.2;x.beginPath();x.moveTo(X(lam1pm),Y(0.92));x.lineTo(X(lam2*1e12),Y(0.92));x.stroke();x.setLineDash([]);
+    x.fillStyle=theme.trace2;x.textAlign="center";x.fillText("Δλ="+(dLam*1e12).toFixed(2)+" пм",X((lam1pm+lam2*1e12)/2),Y(0.97));
+  },[thetaDeg,theme,lam2,dLam,scatCSS,incCSS]);
+
+  useEffect(()=>{drawD();drawS();const h=()=>{drawD();drawS()};window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h)},[drawD,drawS]);
+
+  return(<div>
+    <p style={{fontSize:14,color:theme.textDim,marginBottom:16,lineHeight:1.6}}>Если у света есть импульс p = ħω/c = h/λ, то фотон при столкновении с электроном должен вести себя как бильярдный шар. Комптон рассеивал рентген на электронах и обнаружил: рассеянный фотон имеет <b>бо́льшую</b> длину волны (отдал часть энергии электрону отдачи), причём сдвиг <b>Δλ = λ_C(1 − cos θ)</b> зависит только от угла, а не от λ₁. Здесь λ_C = h/mₑc = 2.43 пм — комптоновская длина волны электрона.</p>
+
+    <div style={{maxWidth:480,marginBottom:8}}>
+      <Sl label="θ — угол рассеяния" value={thetaDeg} min={0} max={180} step={1} onChange={setTheta} theme={theme} unit="°"/>
+    </div>
+
+    <Card items={[
+      {l:"Δλ = λ_C(1−cos θ)",v:(dLam*1e12).toFixed(3)+" пм",c:theme.warn},
+      {l:"λ₂ рассеянного",v:(lam2*1e12).toFixed(2)+" пм",c:theme.trace1},
+      {l:"Энергия фотона E₁→E₂",v:E1.toFixed(1)+"→"+E2.toFixed(1)+" кэВ",c:theme.accent2},
+      {l:"Электрону отдачи",v:Te.toFixed(2)+" кэВ",c:theme.accent4},
+    ]} theme={theme}/>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      <div><Lb>Кинематика рассеяния (сохранение импульса)</Lb><canvas ref={dRef} style={cs(theme,260)}/></div>
+      <div><Lb>Спектр рассеянного излучения: две линии</Lb><canvas ref={sRef} style={cs(theme,260)}/></div>
+    </div>
+
+    <Info text={"При θ=0 сдвига нет (Δλ=0). С ростом угла сдвиг растёт и максимален при обратном рассеянии θ=180°: Δλ=2λ_C=4.85 пм. Цветом показана метафора «покраснения»: рассеянный фотон теряет энергию (длина волны растёт), и чем больше угол, тем сильнее он «краснеет» — хотя реальный рентген глазом не виден. Ключевое свойство формулы: сдвиг Δλ зависит только от угла и совсем не зависит от λ₁ — поэтому здесь λ₁ фиксирована. В спектре всегда две линии: несмещённая (рассеяние на связанных электронах) и смещённая комптоновская."} theme={theme}/>
+  </div>);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 4. DE BROGLIE WAVELENGTH: scales across objects
+// ═══════════════════════════════════════════════════════════════════════
+const DBOBJECTS=[
+  {name:"Электрон (100 эВ)",m:Me,mode:"E",E:100},
+  {name:"Электрон (1 эВ)",m:Me,mode:"E",E:1},
+  {name:"Протон (1 кэВ)",m:Mp,mode:"E",E:1000},
+  {name:"Атом гелия (тепловой, 300 К)",m:6.64e-27,mode:"thermal",T:300},
+  {name:"Пылинка (1 мкг, 1 мм/с)",m:1e-9,mode:"v",v:1e-3},
+  {name:"Бейсбольный мяч (145 г, 40 м/с)",m:0.145,mode:"v",v:40},
+  {name:"Человек (70 кг, 1.5 м/с)",m:70,mode:"v",v:1.5},
+];
+const SCALES=[
+  {l:"Размер ядра",x:1e-15},{l:"Атом",x:1e-10},{l:"Длина волны видимого света",x:5e-7},
+  {l:"Вирус",x:1e-7},{l:"Толщина волоса",x:1e-4},{l:"1 метр",x:1},
+];
+function DeBroglieTab({theme}){
+  const[oi,setOi]=useState(0);
+  const cRef=useRef(null);
+  const obj=DBOBJECTS[oi];
+  const Kb=1.381e-23;
+  const p=useMemo(()=>{
+    if(obj.mode==="E")return Math.sqrt(2*obj.m*obj.E*eV);
+    if(obj.mode==="thermal")return Math.sqrt(2*obj.m*1.5*Kb*obj.T); // p~sqrt(2m·(3/2)kT)
+    return obj.m*obj.v;
+  },[oi]);
+  const lam=Hpl/p;
+
+  const draw=useCallback(()=>{
+    if(!cRef.current)return;const c=su(cRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const mL=20,mR=20;const W=c.w-mL-mR;
+    const yA=c.h*0.60;                    // axis pushed down → room for labels above, marker below
+    const lo=-36, hi=1;                   // log scale 1e-36 .. 1e1 m
+    const X=L=>mL+((Math.log10(L)-lo)/(hi-lo))*W;
+    // reference scales ABOVE the axis: leader line + horizontal label
+    SCALES.forEach((s,i)=>{const xx=X(s.x);
+      const yLab=24+(i%3)*20;             // stagger in 3 rows so labels don't collide
+      x.strokeStyle=theme.accent2;x.setLineDash([2,3]);x.lineWidth=1;x.beginPath();x.moveTo(xx,yA);x.lineTo(xx,yLab+4);x.stroke();x.setLineDash([]);
+      x.fillStyle=theme.accent2;x.beginPath();x.arc(xx,yA,3,0,2*Math.PI);x.fill();
+      x.fillStyle=theme.accent2;x.font="10px monospace";x.textAlign="left";
+      // keep label inside canvas width
+      const tw=x.measureText(s.l).width; let lx=xx+5; if(lx+tw>c.w-4)lx=c.w-4-tw; if(lx<2)lx=2;
+      x.fillText(s.l,lx,yLab);
+    });
+    // axis
+    x.strokeStyle=theme.axis;x.lineWidth=1.5;x.beginPath();x.moveTo(mL,yA);x.lineTo(mL+W,yA);x.stroke();
+    x.fillStyle=theme.textDim;x.font="10px monospace";x.textAlign="center";
+    for(let e=-35;e<=0;e+=5){const xx=X(Math.pow(10,e));x.beginPath();x.strokeStyle=theme.axis;x.moveTo(xx,yA-4);x.lineTo(xx,yA+4);x.stroke();x.fillText("10"+(e<0?"⁻"+Math.abs(e):""+e),xx,yA+16);}
+    x.fillText("λ, м (логарифмическая шкала)",mL+W/2,yA+30);
+    // de Broglie marker BELOW the axis, big label near bottom
+    const xm=X(lam);
+    x.strokeStyle=theme.warn;x.lineWidth=2.6;x.beginPath();x.moveTo(xm,yA);x.lineTo(xm,c.h-30);x.stroke();
+    x.fillStyle=theme.warn;x.beginPath();x.arc(xm,yA,5,0,2*Math.PI);x.fill();
+    x.fillStyle=theme.warn;x.font="bold 13px monospace";x.textAlign="center";
+    const lamTxt = lam<1e-12?lam.toExponential(1)+" м":(lam*1e12<1000?(lam*1e12).toFixed(2)+" пм":(lam*1e9).toFixed(2)+" нм");
+    let lxm=xm; const tw=x.measureText("λ = "+lamTxt).width/2; if(lxm-tw<4)lxm=4+tw; if(lxm+tw>c.w-4)lxm=c.w-4-tw;
+    x.fillText("λ = "+lamTxt,lxm,c.h-12);
+  },[oi,theme,lam]);
+  useEffect(()=>{draw();const h=()=>draw();window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h)},[draw]);
+
+  const detectable = lam>1e-12 && lam<1e-8;
+  return(<div>
+    <p style={{fontSize:14,color:theme.textDim,marginBottom:16,lineHeight:1.6}}>Де Бройль предположил: волны — это частицы, а частицы — это волны. Любому телу с импульсом p соответствует волна длиной <b>λ = h/p</b>. Вопрос лишь в масштабе: у электрона λ сравнима с атомом (волновые эффекты видны), а у мяча λ ~ 10⁻³⁴ м — на 20 порядков меньше ядра, поэтому никакой «волновости» мы не замечаем.</p>
+
+    <div style={{maxWidth:420,marginBottom:8}}>
+      <div style={{fontSize:13,color:theme.textDim,marginBottom:3}}>Объект</div>
+      <select value={oi} onChange={e=>setOi(+e.target.value)} style={{width:"100%",padding:"6px",borderRadius:8,background:theme.btnBg,color:theme.text,border:`1px solid ${theme.panelBorder}`,fontSize:13}}>
+        {DBOBJECTS.map((o,i)=><option key={i} value={i}>{o.name}</option>)}
+      </select>
+    </div>
+
+    <Card items={[
+      {l:"Импульс p",v:p.toExponential(2)+" кг·м/с",c:theme.trace1},
+      {l:"λ = h/p",v:lam<1e-12?lam.toExponential(2)+" м":(lam*1e12<1000?(lam*1e12).toFixed(2)+" пм":(lam*1e9).toFixed(1)+" нм"),c:theme.warn},
+      {l:"Волновые эффекты?",v:detectable?"наблюдаемы":"не видны",c:detectable?theme.accent4:theme.trace2},
+    ]} theme={theme}/>
+
+    <div><Lb>Длина волны де Бройля на фоне характерных масштабов</Lb><canvas ref={cRef} style={cs(theme,250)}/></div>
+
+    <Info text={detectable
+      ?"Для этого объекта λ попадает в диапазон атомных масштабов (≈10⁻¹²…10⁻⁸ м) — её можно «поймать» дифракцией на кристалле (как в опыте Дэвиссона–Джермера, вкладка 6), где межатомные расстояния как раз ~10⁻¹⁰ м. Именно поэтому волновую природу электронов удалось увидеть."
+      :"Для макроскопических тел λ настолько мала (далеко левее размера ядра), что никакой эксперимент не способен обнаружить дифракцию: нет «решётки» с таким крошечным периодом. Поэтому в обычной жизни тела ведут себя как классические частицы, хотя формально волна де Бройля есть у всего."}
+      theme={theme}/>
+  </div>);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 5. HITACHI single-electron interference buildup
+// ═══════════════════════════════════════════════════════════════════════
+function HitachiTab({theme}){
+  const[count,setCount]=useState(300);
+  const[speed,setSpeed]=useState(1);
+  const cRef=useRef(null);
+  const ptsRef=useRef([]);
+  const rafRef=useRef(0);
+  const shownRef=useRef(0);
+
+  // double-slit intensity profile P(y) ∝ cos²(πy/d_fringe)·sinc²(envelope)
+  function sampleY(){
+    // rejection sampling from interference pattern
+    const fr=0.16;   // fringe spacing (in normalized units)
+    const env=0.55;  // envelope width
+    for(let tries=0;tries<100;tries++){
+      const y=(Math.random()*2-1);     // -1..1
+      const inten=Math.pow(Math.cos(Math.PI*y/fr),2)*Math.exp(-(y*y)/(2*env*env));
+      if(Math.random()<inten)return y;
+    }
+    return (Math.random()*2-1);
+  }
+
+  const render=useCallback((n)=>{
+    if(!cRef.current)return;const c=su(cRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);
+    x.fillStyle=theme.canvasBg;x.fillRect(0,0,c.w,c.h);
+    const pts=ptsRef.current;
+    const W=c.w, H=c.h;
+    // dots
+    for(let i=0;i<n && i<pts.length;i++){const p=pts[i];const px=W*0.5+p.y*W*0.46;const py=H*0.12+p.r*H*0.76;
+      x.fillStyle=theme.accent;x.globalAlpha=0.85;x.beginPath();x.arc(px,py,1.6,0,2*Math.PI);x.fill();}
+    x.globalAlpha=1;
+    // counter
+    x.fillStyle=theme.text;x.font="bold 13px monospace";x.textAlign="left";x.fillText("электронов: "+Math.min(n,pts.length),12,22);
+  },[theme]);
+
+  // (re)generate point set when count changes
+  useEffect(()=>{
+    const pts=[];for(let i=0;i<count;i++)pts.push({y:sampleY(),r:Math.random()});
+    ptsRef.current=pts; shownRef.current=0;
+    cancelAnimationFrame(rafRef.current);
+    const step=()=>{shownRef.current=Math.min(count,shownRef.current+Math.max(1,Math.round(count/120*speed)));render(shownRef.current);if(shownRef.current<count)rafRef.current=requestAnimationFrame(step);};
+    rafRef.current=requestAnimationFrame(step);
+    return ()=>cancelAnimationFrame(rafRef.current);
+  },[count,speed,render]);
+
+  useEffect(()=>{const h=()=>render(shownRef.current);window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h)},[render]);
+
+  return(<div>
+    <p style={{fontSize:14,color:theme.textDim,marginBottom:16,lineHeight:1.6}}>В опыте HITACHI (1989) электроны пропускали через бипризму <b>по одному</b> — в установке в каждый момент летел лишь один электрон. Сначала точки на экране кажутся случайными, но по мере накопления из них проявляется <b>интерференционная картина</b>. Раз электроны летят поодиночке, интерферировать им не с кем — значит, каждый электрон интерферирует <b>сам с собой</b>: его волна де Бройля проходит «обоими путями» сразу.</p>
+
+    <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:12,marginBottom:10}}>
+      <Sl label="Число зарегистрированных электронов" value={count} min={20} max={4000} step={20} onChange={setCount} theme={theme}/>
+      <Sl label="Скорость накопления" value={speed} min={0.3} max={3} step={0.1} onChange={setSpeed} theme={theme} format={v=>v.toFixed(1)+"×"}/>
+    </div>
+
+    <Card items={[
+      {l:"Режим",v:"по одному e⁻",c:theme.trace1},
+      {l:"Видна картина?",v:count<150?"ещё шум":count<800?"проявляется":"чёткие полосы",c:count<150?theme.trace2:count<800?theme.warn:theme.accent4},
+      {l:"Природа",v:"волна + частица",c:theme.accent2},
+    ]} theme={theme}/>
+
+    <div><Lb>Экран детектора: попадания отдельных электронов</Lb><canvas ref={cRef} style={cs(theme,300)}/></div>
+
+    <Info text={"Передвиньте ползунок числа электронов от малого к большому: при ~50–100 это хаотичные точки, при ~10³ начинают проступать полосы, при ~10⁴ — чёткая интерференция. Каждое попадание локально и дискретно (частица!), но их статистика рисует волновую картину. Если попытаться узнать, через какую сторону бипризмы прошёл электрон, картина пропадёт — измерение разрушает суперпозицию. Это и есть корпускулярно-волновой дуализм в чистом виде."} theme={theme}/>
+  </div>);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 6. DAVISSON–GERMER: electron diffraction, λ ∝ 1/√U
+// ═══════════════════════════════════════════════════════════════════════
+function DavissonTab({theme}){
+  const[U,setU]=useState(54);     // accelerating voltage, V
+  const[dpm,setD]=useState(91);   // lattice spacing, pm (Ni ~91pm for D-G)
+  const p=Math.sqrt(2*Me*eV*U), lam=Hpl/p;       // de Broglie wavelength, m
+  const d=dpm*1e-12;
+  // first-order Bragg: 2 d sinθ = λ → θ = asin(λ/2d) (if ≤1)
+  const arg=lam/(2*d);
+  const theta=arg<=1?Math.asin(arg):null;
+  const cRef=useRef(null), bRef=useRef(null);
+
+  // LEFT: crystal whose lattice spacing tracks d, with incident + diffracted beams
+  const drawCrystal=useCallback(()=>{
+    if(!cRef.current)return;const c=su(cRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const ox=c.w*0.46, oy=c.h*0.66, L=Math.min(c.w*0.42,c.h*0.6);
+    // lattice spacing in px scales with d (50..250 pm → ~10..30 px)
+    const sp=8+(dpm-50)/200*22;
+    // draw atom grid filling lower region
+    x.fillStyle=theme.textDim;
+    const x0=14, x1=c.w-14, y0=oy+6, y1=c.h-22;
+    for(let yy=y0; yy<=y1; yy+=sp){ for(let xx=x0; xx<=x1; xx+=sp){ x.globalAlpha=0.55; x.beginPath();x.arc(xx,yy,2.2,0,2*Math.PI);x.fill(); } }
+    x.globalAlpha=1;
+    // surface line
+    x.strokeStyle=theme.axis;x.lineWidth=2;x.beginPath();x.moveTo(x0,oy);x.lineTo(x1,oy);x.stroke();
+    // d marker on the lattice (vertical double arrow between two rows)
+    const dmx=x1-26;
+    x.strokeStyle=theme.accent3;x.lineWidth=1.4;arrow2(x,dmx,y0+2,dmx,y0+sp-2,theme.accent3,1.4);arrow2(x,dmx,y0+sp-2,dmx,y0+2,theme.accent3,1.4);
+    x.fillStyle=theme.accent3;x.font="10px monospace";x.textAlign="right";x.fillText("d",dmx-4,y0+sp/2+3);
+    x.fillStyle=theme.text;x.font="11px monospace";x.textAlign="left";x.fillText("кристалл Ni",x0+2,c.h-6);
+    // incident electron beam down to O
+    arrow2(x,ox-L*0.7,oy-L*0.92,ox,oy,theme.trace1,2.4);
+    x.fillStyle=theme.trace1;x.font="11px monospace";x.textAlign="left";x.fillText("пучок e⁻",ox-L*0.7,oy-L*0.86);
+    // normal
+    x.strokeStyle=theme.textDim;x.setLineDash([3,3]);x.lineWidth=1;x.beginPath();x.moveTo(ox,oy);x.lineTo(ox,oy-L*0.96);x.stroke();x.setLineDash([]);
+    x.fillStyle=theme.textDim;x.fillText("нормаль",ox+4,oy-L*0.92);
+    if(theta!==null){const a=theta;const dx=Math.sin(a),dy=-Math.cos(a);
+      arrow2(x,ox,oy,ox+L*1.0*dx,oy+L*1.0*dy,theme.warn,2.6);
+      x.fillStyle=theme.warn;x.textAlign="left";x.fillText("→ максимум",ox+L*1.0*dx+4,oy+L*1.0*dy);
+      x.strokeStyle=theme.warn;x.lineWidth=1.3;x.beginPath();x.arc(ox,oy,28,-Math.PI/2,-Math.PI/2+a);x.stroke();
+      x.fillStyle=theme.warn;x.textAlign="center";x.fillText("θ",ox+38*Math.sin(a/2),oy-38*Math.cos(a/2));
+    } else {
+      x.fillStyle=theme.trace2;x.textAlign="center";x.fillText("нет максимума: λ > 2d",ox,oy-L*0.5);
+    }
+  },[U,dpm,theme,theta]);
+
+  // RIGHT: Bragg close-up — two planes separated by d, two rays, extra path 2d·sinθ
+  const drawBragg=useCallback(()=>{
+    if(!bRef.current)return;const c=su(bRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const mL=16,mR=16;const W=c.w-mL-mR;
+    // two planes; separation scales with d (50..250 pm → fraction of height)
+    const yTop=c.h*0.40, dd=Math.max(26,Math.min(c.h*0.32,(dpm/250)*c.h*0.34)), yBot=yTop+dd;
+    // planes with atoms
+    [yTop,yBot].forEach(yy=>{x.strokeStyle=theme.axis;x.lineWidth=1.5;x.beginPath();x.moveTo(mL,yy);x.lineTo(mL+W,yy);x.stroke();
+      x.fillStyle=theme.textDim;for(let xx=mL+10;xx<=mL+W-6;xx+=20){x.beginPath();x.arc(xx,yy,2.6,0,2*Math.PI);x.fill();}});
+    // d double-arrow
+    const dax=mL+22;x.strokeStyle=theme.accent3;arrow2(x,dax,yTop+2,dax,yBot-2,theme.accent3,1.4);arrow2(x,dax,yBot-2,dax,yTop+2,theme.accent3,1.4);
+    x.fillStyle=theme.accent3;x.font="11px monospace";x.textAlign="left";x.fillText("d",dax+4,(yTop+yBot)/2+4);
+    const a = theta!==null?theta:35*Math.PI/180;   // glancing angle from plane (use complement: angle to plane)
+    // NOTE: Bragg angle is measured from the PLANE; θ in our formula is from normal, so plane-angle = 90°-θ... 
+    // We illustrate with grazing angle g where 2d sin(g)=λ uses g from plane. To stay consistent with the
+    // crystal panel (θ from normal) we show grazing angle = θ here as the angle to the plane for clarity.
+    const g=a; // grazing angle to the plane
+    const dirIn=[Math.cos(g),Math.sin(g)];     // coming down-right onto planes
+    const dirOut=[Math.cos(g),-Math.sin(g)];   // reflected up-right
+    // hit points: ray A hits top plane at P1, ray B goes to bottom plane at P2 (directly below-ish)
+    const Px=mL+W*0.46;                          // x of reflection on top plane
+    const P1=[Px,yTop];
+    // incident rays (parallel), entering from upper-left
+    const Lin=Math.min(W*0.42, yTop*0.9/Math.max(0.2,Math.sin(g)));
+    const A0=[P1[0]-dirIn[0]*Lin, P1[1]-dirIn[1]*Lin];
+    arrow2(x,A0[0],A0[1],P1[0],P1[1],theme.trace1,2.2);
+    // ray B parallel, separated, continues to bottom plane
+    const off=dd/Math.tan(g)/1; // horizontal offset so that B reflecting off bottom is parallel family
+    const P2=[Px+dd/Math.tan(g), yBot];
+    const B0=[P2[0]-dirIn[0]*Lin, P2[1]-dirIn[1]*Lin];
+    arrow2(x,B0[0],B0[1],P2[0],P2[1],theme.trace1,2.2);
+    // reflected rays
+    const Aout=[P1[0]+dirOut[0]*W*0.4, P1[1]+dirOut[1]*W*0.4];
+    const Bout=[P2[0]+dirOut[0]*W*0.4, P2[1]+dirOut[1]*W*0.4];
+    arrow2(x,P1[0],P1[1],Aout[0],Aout[1],theme.warn,2.2);
+    arrow2(x,P2[0],P2[1],Bout[0],Bout[1],theme.warn,2.2);
+    // extra path of ray B = segments from top-plane level down to bottom and back = 2 d sin(g)
+    // draw the two little perpendicular drop segments highlighting path difference near P2
+    // foot of perpendicular from P1 onto incident ray B and onto outgoing ray B
+    function foot(P, dir, Q){ // projection of Q onto line through P with unit dir
+      const vx=Q[0]-P[0], vy=Q[1]-P[1]; const tdot=vx*dir[0]+vy*dir[1]; return [P[0]+dir[0]*tdot, P[1]+dir[1]*tdot]; }
+    const Fin=foot(P2, dirIn, P1);    // on incident ray B
+    const Fout=foot(P2, dirOut, P1);  // on outgoing ray B
+    x.strokeStyle=theme.accent4;x.lineWidth=2;x.setLineDash([4,3]);
+    x.beginPath();x.moveTo(P1[0],P1[1]);x.lineTo(Fin[0],Fin[1]);x.stroke();
+    x.beginPath();x.moveTo(P1[0],P1[1]);x.lineTo(Fout[0],Fout[1]);x.stroke();x.setLineDash([]);
+    // highlight extra path segments Fin→P2 and P2→Fout
+    x.strokeStyle=theme.accent4;x.lineWidth=3.2;
+    x.beginPath();x.moveTo(Fin[0],Fin[1]);x.lineTo(P2[0],P2[1]);x.stroke();
+    x.beginPath();x.moveTo(P2[0],P2[1]);x.lineTo(Fout[0],Fout[1]);x.stroke();
+    x.fillStyle=theme.accent4;x.font="bold 11px monospace";x.textAlign="left";
+    x.fillText("разность хода = 2d·sinθ",mL+W*0.30,yBot+26);
+    // grazing angle arc at P1
+    x.strokeStyle=theme.warn;x.lineWidth=1.2;x.beginPath();x.arc(P1[0],P1[1],20,Math.PI- g, Math.PI);x.stroke();
+    x.fillStyle=theme.warn;x.textAlign="center";x.font="10px monospace";x.fillText("θ",P1[0]-26,P1[1]-6);
+    // condition text
+    x.fillStyle=theme.text;x.font="bold 12px monospace";x.textAlign="center";
+    const cond = theta!==null ? "2d·sinθ = λ  →  конструктивная интерференция" : "λ > 2d: условие невыполнимо";
+    x.fillStyle = theta!==null?theme.accent4:theme.trace2;
+    x.fillText(cond, mL+W/2, 22);
+  },[U,dpm,theme,theta]);
+
+  useEffect(()=>{drawCrystal();drawBragg();const h=()=>{drawCrystal();drawBragg()};window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h)},[drawCrystal,drawBragg]);
+
+  return(<div>
+    <p style={{fontSize:14,color:theme.textDim,marginBottom:16,lineHeight:1.6}}>Дэвиссон и Джермер (1927) направили пучок электронов на кристалл никеля и увидели <b>дифракционные максимумы</b> — точно как для рентгена. Волны, отражённые от соседних атомных плоскостей (на расстоянии d), проходят разный путь <b>2d·sin θ</b>; когда он кратен λ, волны складываются — условие Брэгга <b>2d·sin θ = nλ</b>, где λ = h/p. Ускоряющее напряжение задаёт импульс: <b>λ = h/√(2mₑeU) ∝ 1/√U</b>.</p>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:8}}>
+      <Sl label="U — ускоряющее напряжение" value={U} min={10} max={400} step={2} onChange={setU} theme={theme} unit=" В"/>
+      <Sl label="d — межплоскостное расстояние" value={dpm} min={50} max={250} step={1} onChange={setD} theme={theme} unit=" пм"/>
+    </div>
+
+    <Card items={[
+      {l:"λ = h/√(2mₑeU)",v:(lam*1e12).toFixed(1)+" пм",c:theme.warn},
+      {l:"Разность хода 2d·sinθ",v:theta!==null?(2*d*Math.sin(theta)*1e12).toFixed(1)+" пм = λ":"—",c:theme.accent4},
+      {l:"Угол максимума θ",v:theta!==null?(theta*180/Math.PI).toFixed(1)+"°":"нет",c:theta!==null?theme.accent4:theme.trace2},
+      {l:"Условие Брэгга",v:"2d·sinθ = λ",c:theme.accent2},
+    ]} theme={theme}/>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      <div><Lb>Кристалл: решётка (период ∝ d) и дифрагированный пучок</Lb><canvas ref={cRef} style={cs(theme,280)}/></div>
+      <div><Lb>Крупный план: интерференция лучей от двух плоскостей</Lb><canvas ref={bRef} style={cs(theme,280)}/></div>
+    </div>
+
+    <Info text={"Меняйте d — период решётки слева подстраивается, а справа меняется расстояние между плоскостями: видно, как растёт/убывает разность хода 2d·sinθ и подстраивается угол максимума. Увеличивайте U: λ уменьшается как 1/√U, и брэгговский угол смещается. Историческое значение D–G: при 54 В λ≈167 пм давала чёткий максимум — точное совпадение с λ=h/p, что подтвердило волну де Бройля. Та же физика — основа электронного микроскопа: малая λ электронов даёт разрешение в тысячи раз лучше оптического."} theme={theme}/>
+  </div>);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// 7. UNCERTAINTY PRINCIPLE: wave packet Δx·Δp ≥ ℏ/2
+// ═══════════════════════════════════════════════════════════════════════
+function UncertaintyTab({theme}){
+  const[dx,setDx]=useState(1.0);   // spatial width (arb units)
+  const xRef=useRef(null), pRef=useRef(null);
+  // Gaussian packet: ψ(x)=exp(-x²/4Δx²)cos(k0 x); momentum width Δp=ℏ/(2Δx)
+  const k0=8;
+  const dpRel=1/(2*dx);            // Δp ∝ 1/(2Δx) in ħ=1 units
+
+  const drawX=useCallback(()=>{
+    if(!xRef.current)return;const c=su(xRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const mT=10,mB=22,mL=10,mR=10;const W=c.w-mL-mR,H=c.h-mT-mB;const midY=mT+H/2;
+    const X=u=>mL+(u+5)/10*W;       // u in -5..5
+    x.strokeStyle=theme.axis;x.lineWidth=1;x.beginPath();x.moveTo(mL,midY);x.lineTo(mL+W,midY);x.stroke();
+    // envelope
+    x.strokeStyle=theme.accent2;x.setLineDash([4,3]);x.lineWidth=1.2;x.beginPath();
+    for(let i=0;i<=300;i++){const u=-5+10*i/300;const env=Math.exp(-(u*u)/(2*dx*dx));x.lineTo(X(u),midY-env*H*0.42);}x.stroke();
+    x.beginPath();for(let i=0;i<=300;i++){const u=-5+10*i/300;const env=Math.exp(-(u*u)/(2*dx*dx));x.lineTo(X(u),midY+env*H*0.42);}x.stroke();x.setLineDash([]);
+    // packet
+    x.strokeStyle=theme.accent;x.lineWidth=2;x.beginPath();
+    for(let i=0;i<=600;i++){const u=-5+10*i/600;const env=Math.exp(-(u*u)/(2*dx*dx));const psi=env*Math.cos(k0*u/Math.max(0.5,1));x.lineTo(X(u),midY-psi*H*0.42);}
+    x.stroke();
+    // Δx bracket
+    x.strokeStyle=theme.warn;x.lineWidth=1.4;x.beginPath();x.moveTo(X(-dx),midY+H*0.46);x.lineTo(X(dx),midY+H*0.46);x.stroke();
+    x.fillStyle=theme.warn;x.font="bold 11px monospace";x.textAlign="center";x.fillText("Δx",X(0),midY+H*0.46-4);
+  },[dx,theme]);
+
+  const drawP=useCallback(()=>{
+    if(!pRef.current)return;const c=su(pRef.current);const x=c.ctx;x.clearRect(0,0,c.w,c.h);gr(x,c.w,c.h,theme);
+    const mT=10,mB=22,mL=10,mR=10;const W=c.w-mL-mR,H=c.h-mT-mB;const baseY=mT+H-2;
+    const X=u=>mL+(u+5)/10*W;
+    x.strokeStyle=theme.axis;x.lineWidth=1;x.beginPath();x.moveTo(mL,baseY);x.lineTo(mL+W,baseY);x.stroke();
+    // momentum distribution centered at k0-equivalent (draw centered), width dpRel
+    const sg=Math.max(0.18,dpRel);
+    x.strokeStyle=theme.trace3;x.lineWidth=2;x.fillStyle=theme.trace3+"22";x.beginPath();x.moveTo(X(-5),baseY);
+    for(let i=0;i<=300;i++){const u=-5+10*i/300;const v=Math.exp(-(u*u)/(2*sg*sg));x.lineTo(X(u),baseY-v*H*0.86);}
+    x.lineTo(X(5),baseY);x.closePath();x.fill();
+    x.strokeStyle=theme.trace3;x.beginPath();for(let i=0;i<=300;i++){const u=-5+10*i/300;const v=Math.exp(-(u*u)/(2*sg*sg));const xx=X(u),yy=baseY-v*H*0.86;if(i===0)x.moveTo(xx,yy);else x.lineTo(xx,yy);}x.stroke();
+    // Δp bracket
+    x.strokeStyle=theme.warn;x.lineWidth=1.4;x.beginPath();x.moveTo(X(-sg),baseY-H*0.5);x.lineTo(X(sg),baseY-H*0.5);x.stroke();
+    x.fillStyle=theme.warn;x.font="bold 11px monospace";x.textAlign="center";x.fillText("Δp",X(0),baseY-H*0.5-4);
+  },[dx,theme,dpRel]);
+
+  useEffect(()=>{drawX();drawP();const h=()=>{drawX();drawP()};window.addEventListener("resize",h);return()=>window.removeEventListener("resize",h)},[drawX,drawP]);
+
+  const product=(dx*dpRel); // = 0.5 always in these units → ħ/2
+  return(<div>
+    <p style={{fontSize:14,color:theme.textDim,marginBottom:16,lineHeight:1.6}}>Волновая природа частиц запрещает одновременно точно знать координату и импульс: <b>Δx·Δp ≳ ħ/2</b>. Это не дефект приборов, а свойство природы. Причина — Фурье: чтобы «сжать» волновой пакет в координате (малое Δx), нужно сложить волны многих разных импульсов (большое Δp), и наоборот. Двигайте локализацию пакета и смотрите, как ведёт себя ширина по импульсам.</p>
+
+    <Sl label="Δx — локализация пакета в пространстве" value={dx} min={0.35} max={2.5} step={0.05} onChange={setDx} theme={theme} format={v=>v.toFixed(2)}/>
+
+    <Card items={[
+      {l:"Ширина Δx",v:dx.toFixed(2),c:theme.accent},
+      {l:"Ширина Δp",v:dpRel.toFixed(2)+"·ħ",c:theme.trace3},
+      {l:"Произведение",v:"Δx·Δp = ħ/2",c:theme.warn},
+      {l:"Предел",v:"≥ ħ/2",c:theme.accent4},
+    ]} theme={theme}/>
+
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+      <div><Lb>Волновой пакет в координатном пространстве ψ(x)</Lb><canvas ref={xRef} style={cs(theme,240)}/></div>
+      <div><Lb>Распределение по импульсам |φ(p)|²</Lb><canvas ref={pRef} style={cs(theme,240)}/></div>
+    </div>
+
+    <Info text={"Сожмите пакет (маленькое Δx) — распределение по импульсам тут же расплывается (большое Δp), и наоборот; произведение Δx·Δp держится у минимума ħ/2 (гауссов пакет — самый «экономный»). Тот же принцип в дифракции на щели: узкая щель (точная координата) даёт широкое угловое расхождение пучка (большой разброс поперечного импульса), Δx·Δpₓ ≳ ħ. И аналог во времени: короткий импульс ↔ широкий спектр частот (ΔE·Δt ≳ ħ) — отсюда естественная ширина спектральных линий."} theme={theme}/>
+  </div>);
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+function App(){
+  const[themeKey,setThemeKey]=useState("dark"),[tab,setTab]=useState("photo"),[menuOpen,setMenuOpen]=useState(false);
+  const t=TH[themeKey],cur=TABS.find(tb=>tb.id===tab);
+  return(
+    <div data-theme={themeKey} style={{minHeight:"100vh",background:t.bg,color:t.text,fontFamily:"'Segoe UI','Noto Sans',system-ui,sans-serif",transition:"background 0.3s",padding:"20px 16px"}}>
+      <style>{`input[type=range]::-webkit-slider-thumb{appearance:none;width:14px;height:14px;border-radius:50%;background:${t.sliderThumb};cursor:pointer;box-shadow:0 0 6px ${t.sliderThumb}88}input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;border:none;background:${t.sliderThumb};cursor:pointer}*{box-sizing:border-box}::selection{background:${t.accent}44}select{outline:none}`}</style>
+      <div style={{maxWidth:960,margin:"0 auto"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+          <div><h1 style={{fontSize:22,fontWeight:700,margin:0}}>{"⚛️"} Фотоэффект и эффект Комптона</h1><div style={{fontSize:12,color:t.textDim,marginTop:2}}>Лекция 2 · 7 демонстраций</div></div>
+          <button onClick={()=>setThemeKey(themeKey==="dark"?"light":"dark")} style={{padding:"6px 14px",borderRadius:20,border:`1px solid ${t.panelBorder}`,background:t.btnBg,color:t.text,cursor:"pointer",fontSize:13}}>{themeKey==="dark"?"☀ Светлая":"🌙 Тёмная"}</button>
+        </div>
+        <div style={{position:"relative",marginBottom:20}}>
+          <button onClick={()=>setMenuOpen(!menuOpen)} style={{width:"100%",padding:"12px 18px",borderRadius:10,border:`1px solid ${t.dropBorder}`,background:t.dropBg,color:t.text,cursor:"pointer",fontSize:15,fontWeight:600,display:"flex",justifyContent:"space-between",alignItems:"center",boxShadow:t.shadow}}>
+            <span><span style={{color:t.accent,marginRight:8}}>▸</span>{cur?.label}</span>
+            <span style={{color:t.textDim,fontSize:12,transform:menuOpen?"rotate(180deg)":"rotate(0deg)",transition:"transform 0.2s"}}>▼</span>
+          </button>
+          {menuOpen&&<div style={{position:"absolute",top:"100%",left:0,right:0,marginTop:4,zIndex:100,background:t.dropBg,border:`1px solid ${t.dropBorder}`,borderRadius:10,boxShadow:t.shadow,overflow:"hidden"}}>
+            {TABS.map(tb=><button key={tb.id} onClick={()=>{setTab(tb.id);setMenuOpen(false)}} style={{width:"100%",padding:"11px 18px",border:"none",cursor:"pointer",background:tab===tb.id?t.accent+"22":"transparent",color:tab===tb.id?t.accent:t.text,fontSize:14,fontWeight:tab===tb.id?700:400,textAlign:"left",display:"block"}}>{tb.label}</button>)}
+          </div>}
+        </div>
+        {menuOpen&&<div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setMenuOpen(false)}/>}
+        <div style={{background:t.panel,borderRadius:14,padding:24,border:`1px solid ${t.panelBorder}`,boxShadow:t.shadow}}>
+          {tab==="photo"&&<PhotoTab theme={t}/>}
+          {tab==="millikan"&&<MillikanTab theme={t}/>}
+          {tab==="compton"&&<ComptonTab theme={t}/>}
+          {tab==="debroglie"&&<DeBroglieTab theme={t}/>}
+          {tab==="hitachi"&&<HitachiTab theme={t}/>}
+          {tab==="davisson"&&<DavissonTab theme={t}/>}
+          {tab==="uncertainty"&&<UncertaintyTab theme={t}/>}
+        </div>
+        <div style={{textAlign:"center",fontSize:11,color:t.textDim,marginTop:16,opacity:0.6}}>Лекция 2 · Фотоэффект. Эффект Комптона · Innopolis 2025</div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(App));
+  </script>
+</body>
+</html>

@@ -1,0 +1,177 @@
+/* Базовая тема колод Марабу — намеренно минимальная («белый фон, системный
+   шрифт, рамки-пунктиры для заглушек»). Финальный визуал — отдельным этапом
+   через Claude Design: он переопределяет токены и стили блоков, не трогая
+   разметку и контент.
+
+   Все цвета — ТОЛЬКО через CSS-переменные. Лекционные палитры
+   (electron.css / turbulence.css) переопределяют токены в :root. */
+
+:root {
+  --bg: #ffffff;
+  --ink: #1b1b2f;
+  --muted: #6e6e80;
+  --accent: #3e2f8e;
+  --chip: #f2f0fb;
+  --demo-fill: #edeaf8;
+  --title-sub: #d9d4f2;
+
+  --font-head: Cambria, Georgia, 'Times New Roman', serif;
+  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+}
+
+.reveal-viewport { background: var(--bg); }
+.reveal { font-family: var(--font-body); color: var(--ink); }
+/* var(--slide-height) выставляет сам reveal; фолбэк 100% — до инициализации.
+   Так секция ровно 720px и на экране, и в ?print-pdf (без клипа низа). */
+.reveal .slides section { text-align: left; height: var(--slide-height, 100%); box-sizing: border-box; }
+
+.slide-inner {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 44px 56px;
+  box-sizing: border-box;
+}
+
+/* ---------- контентные слайды ---------- */
+
+.kicker {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 2.5px;
+  color: var(--accent);
+  margin: 0 0 10px;
+}
+
+.heading {
+  font-family: var(--font-head);
+  font-size: 44px;
+  font-weight: 700;
+  line-height: 1.05;
+  color: var(--ink);
+  margin: 0 0 26px;
+}
+
+.blocks {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  min-height: 0;
+}
+
+.blk { margin: 0; }
+
+/* Крупная мысль */
+.blk-lead {
+  font-family: var(--font-head);
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: var(--accent);
+}
+
+/* Маркированный список */
+.blk-bullets {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 25px;
+  line-height: 1.35;
+}
+.blk-bullets li { position: relative; padding-left: 34px; margin-bottom: 14px; }
+.blk-bullets li::before { content: '–'; position: absolute; left: 8px; }
+
+/* Формула с подписью */
+.blk-formula {
+  background: var(--chip);
+  border-radius: 14px;
+  padding: 26px 30px 20px;
+  text-align: center;
+}
+.formula-text {
+  font-family: var(--font-head);
+  font-size: 38px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.formula-text.small { font-size: 29px; }
+.formula-caption { font-size: 17px; font-style: italic; color: var(--muted); margin-top: 12px; }
+
+/* Заглушка демки (позже — iframe) и живой опыт */
+.blk-demo, .blk-live {
+  border-radius: 16px;
+  padding: 20px 26px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 12px;
+}
+.blk-demo {
+  background: var(--demo-fill);
+  border: 2px dashed var(--accent);
+  flex: 1 1 auto;
+  min-height: 120px;
+}
+.blk-live { background: var(--chip); }
+.blk-label { font-size: 14px; font-weight: 700; letter-spacing: 2.5px; color: var(--accent); }
+.blk-desc { font-size: 21px; line-height: 1.35; color: var(--ink); max-width: 950px; margin: 0 auto; }
+
+.blk-demo.has-frame { padding: 8px; border-style: solid; }
+/* min-height:0 гасит интринсик-высоту iframe (150px), иначе он выдавит контент из блока */
+.demo-frame { flex: 1; min-height: 0; width: 100%; border: 0; border-radius: 10px; background: var(--bg); }
+
+/* Две колонки-карточки */
+.blk-compare {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 22px;
+  flex: 1 1 auto;
+  align-items: stretch;
+}
+.compare-col { background: var(--chip); border-radius: 14px; padding: 24px 26px; }
+.compare-title {
+  font-family: var(--font-head);
+  font-size: 25px;
+  font-weight: 700;
+  color: var(--accent);
+  margin-bottom: 12px;
+}
+.compare-body { font-size: 21px; line-height: 1.4; }
+
+/* Видео (YouTube и т.п.) */
+.blk-video { flex: 1 1 auto; display: flex; flex-direction: column; gap: 10px; }
+.video-frame { flex: 1; width: 100%; border: 0; border-radius: 12px; background: #000; }
+
+/* ---------- титул и финал (акцентный «сэндвич») ---------- */
+
+.slide-accent .slide-inner { justify-content: center; }
+.accent-title { font-family: var(--font-head); font-weight: 700; color: #fff; margin: 0; }
+.slide-title .accent-title { font-size: 64px; line-height: 1.05; }
+.slide-closing .accent-title { font-size: 44px; line-height: 1.15; max-width: 1050px; }
+.accent-subtitle { color: #fff; margin: 26px 0 0; }
+.slide-title .accent-subtitle { font-size: 30px; }
+.slide-closing .accent-subtitle {
+  font-size: 22px;
+  line-height: 1.5;
+  color: var(--title-sub);
+  max-width: 1020px;
+}
+.accent-tag {
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 2.5px;
+  color: var(--title-sub);
+  margin: 44px 0 0;
+}
+
+/* ---------- обвязка reveal ---------- */
+
+.reveal .progress { color: var(--accent); }
+.reveal .slide-number {
+  background: transparent;
+  color: var(--muted);
+  font-size: 16px;
+  font-family: var(--font-body);
+}

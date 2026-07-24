@@ -1,0 +1,1358 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Основы квантовых вычислений — Интерактивные демонстрации</title>
+  <meta name="description" content="8 интерактивных демонстраций по основам квантовых вычислений: поляризация и фотон-кубит, источник одиночных фотонов (Пуассон), сфера Блоха и гейты, экспоненциальный рост, алгоритм Гровера, запутанность и EPR, BB84 с Евой, квантовая телепортация.">
+  <link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'&gt;&lt;text y='28' font-size='28'&gt;%E2%9A%9B%EF%B8%8F&lt;/text&gt;&lt;/svg&gt;">
+  <style>
+    * { margin: 0; padding: 0; }
+    body { overflow-x: hidden; }
+    #root { min-height: 100vh; }
+  </style>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const THEMES = {
+  dark: {
+    bg: "#0a0e17", panel: "#111827", panelBorder: "#1e293b",
+    text: "#e2e8f0", textDim: "#94a3b8", accent: "#22d3ee",
+    accent2: "#a78bfa", accent3: "#f472b6", accent4: "#34d399",
+    warn: "#fbbf24", grid: "#1e293b", axis: "#475569",
+    canvasBg: "#0f172a", trace1: "#22d3ee", trace2: "#f472b6",
+    trace3: "#a78bfa", trace4: "#34d399", trace5: "#fbbf24",
+    btnBg: "#1e293b", sliderTrack: "#334155", sliderThumb: "#22d3ee",
+    shadow: "0 4px 24px rgba(0,0,0,0.5)",
+    dropBg: "#1e293b", dropBorder: "#334155"
+  },
+  light: {
+    bg: "#f8fafc", panel: "#ffffff", panelBorder: "#e2e8f0",
+    text: "#1e293b", textDim: "#64748b", accent: "#0891b2",
+    accent2: "#7c3aed", accent3: "#db2777", accent4: "#059669",
+    warn: "#d97706", grid: "#e2e8f0", axis: "#94a3b8",
+    canvasBg: "#f1f5f9", trace1: "#0891b2", trace2: "#db2777",
+    trace3: "#7c3aed", trace4: "#059669", trace5: "#d97706",
+    btnBg: "#e2e8f0", sliderTrack: "#cbd5e1", sliderThumb: "#0891b2",
+    shadow: "0 4px 24px rgba(0,0,0,0.08)",
+    dropBg: "#ffffff", dropBorder: "#e2e8f0"
+  }
+};
+
+const TABS = [
+  { id: "polarization", label: "1. Поляризация и фотон-кубит" },
+  { id: "poisson", label: "2. Источник одиночных фотонов" },
+  { id: "bloch", label: "3. Сфера Блоха и гейты" },
+  { id: "scaling", label: "4. Экспоненциальный рост" },
+  { id: "grover", label: "5. Алгоритм Гровера" },
+  { id: "entangle", label: "6. Запутанность и EPR" },
+  { id: "bb84", label: "7. BB84 с Евой" },
+  { id: "teleport", label: "8. Квантовая телепортация" },
+];
+
+// ─── Shared UI ──────────────────────────────────────────────────────
+function Slider({ label, value, min, max, step, onChange, theme, unit = "", format }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: theme.textDim, marginBottom: 3 }}>
+        <span>{label}</span>
+        <span style={{ color: theme.accent, fontFamily: "monospace", fontWeight: 600 }}>{format ? format(value) : value}{unit}</span>
+      </div>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(Number(e.target.value))}
+        style={{ width: "100%", height: 6, appearance: "none", background: theme.sliderTrack, borderRadius: 3, outline: "none", cursor: "pointer", accentColor: theme.sliderThumb }} />
+    </div>
+  );
+}
+function InfoBox({ text, theme }) {
+  return <div style={{ padding: "10px 14px", borderRadius: 8, fontSize: 13, lineHeight: 1.6, background: theme.accent + "11", border: `1px solid ${theme.accent}33`, color: theme.textDim, marginTop: 10 }}>💡 {text}</div>;
+}
+function Label({ children }) {
+  return <div style={{ fontSize: 11, marginBottom: 4, textTransform: "uppercase", letterSpacing: 1, opacity: 0.6 }}>{children}</div>;
+}
+const cs = (t, h = 220) => ({ width: "100%", height: h, borderRadius: 8, background: t.canvasBg, border: `1px solid ${t.panelBorder}`, display: "block" });
+
+function setup(c) {
+  const d = window.devicePixelRatio || 1, r = c.getBoundingClientRect();
+  c.width = r.width * d; c.height = r.height * d;
+  const x = c.getContext("2d"); x.scale(d, d);
+  return { ctx: x, w: r.width, h: r.height };
+}
+function grid(ctx, w, h, t, rows = 4, cols = 8) {
+  ctx.strokeStyle = t.grid; ctx.lineWidth = 0.5;
+  for (let i = 0; i <= cols; i++) { ctx.beginPath(); ctx.moveTo((i / cols) * w, 0); ctx.lineTo((i / cols) * w, h); ctx.stroke(); }
+  for (let i = 0; i <= rows; i++) { ctx.beginPath(); ctx.moveTo(0, (i / rows) * h); ctx.lineTo(w, (i / rows) * h); ctx.stroke(); }
+}
+// Arrowhead helper
+function arrow2(ctx, x1, y1, x2, y2, color, lw, head = 8) {
+  const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy);
+  if (len < 1) return;
+  const ux = dx / len, uy = dy / len;
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = lw;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - head * ux + head * 0.45 * uy, y2 - head * uy - head * 0.45 * ux);
+  ctx.lineTo(x2 - head * ux - head * 0.45 * uy, y2 - head * uy + head * 0.45 * ux);
+  ctx.closePath(); ctx.fill();
+}
+// Small stat-card row
+function StatRow({ items, theme }) {
+  return (
+    <div style={{ display: "flex", gap: 12, marginBottom: 14, justifyContent: "center", flexWrap: "wrap" }}>
+      {items.map((it, i) => (
+        <div key={i} style={{ textAlign: "center", padding: "6px 14px", borderRadius: 8, background: it.c + "11", border: `1px solid ${it.c}33`, minWidth: 70 }}>
+          <div style={{ fontSize: 11, color: theme.textDim }}>{it.l}</div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: it.c, fontFamily: "monospace" }}>{it.v}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 1: POLARIZATION (ported from EM-waves demo) + photon-qubit bridge
+// ═══════════════════════════════════════════════════════════════════════
+function PolarizationTab({ theme }) {
+  const [ampRatio, setAmpRatio] = useState(1); // Ey/Ex
+  const [delta, setDelta] = useState(0); // phase difference in degrees
+  const [preset, setPreset] = useState("linear");
+  const [unpol, setUnpol] = useState(false);
+  const cRef3d = useRef(null), cRef2d = useRef(null);
+  const animRef = useRef(null), tRef = useRef(0);
+
+  const PHASE_SLOTS = 60;
+  const phaseHistoryRef = useRef(null);
+  if (!phaseHistoryRef.current) {
+    phaseHistoryRef.current = Array.from({ length: PHASE_SLOTS }, () => ({
+      delta: Math.random() * 2 * Math.PI,
+      angle: Math.random() * Math.PI,
+    }));
+  }
+  const lastEmitRef = useRef(0);
+
+  const PRESETS = [
+    { id: "linear", label: "Линейная (H/V)", ay: 1, d: 0 },
+    { id: "circular", label: "Круговая (L/R)", ay: 1, d: 90 },
+    { id: "elliptic", label: "Эллиптическая", ay: 0.6, d: 60 },
+    { id: "unpol", label: "Неполяризованный", ay: 1, d: 0 },
+  ];
+
+  const applyPreset = (id) => {
+    setPreset(id);
+    const p = PRESETS.find(x => x.id === id);
+    if (id === "unpol") { setUnpol(true); setAmpRatio(1); setDelta(0); }
+    else { setUnpol(false); setAmpRatio(p.ay); setDelta(p.d); }
+  };
+
+  const draw = useCallback((t) => {
+    if (!cRef3d.current || !cRef2d.current) return;
+    const dRad = delta * Math.PI / 180;
+    const Ax = 1, Ay = ampRatio;
+
+    if (unpol) {
+      const emitInterval = 0.15;
+      while (t - lastEmitRef.current > emitInterval) {
+        lastEmitRef.current += emitInterval;
+        phaseHistoryRef.current.unshift({
+          delta: Math.random() * 2 * Math.PI,
+          angle: Math.random() * Math.PI,
+        });
+        phaseHistoryRef.current.pop();
+      }
+    }
+
+    const getUnpolPhase = (zNorm) => {
+      const idx = Math.min(PHASE_SLOTS - 1, Math.floor(zNorm * PHASE_SLOTS));
+      return phaseHistoryRef.current[idx];
+    };
+
+    // ═══ 3D helix view ═══
+    const { ctx, w, h } = setup(cRef3d.current);
+    ctx.clearRect(0, 0, w, h);
+
+    const oxScreen = w * 0.15, oyScreen = h * 0.5;
+    const scaleX = 50, scaleY = 50;
+    const zLen = w * 0.75;
+    const nPts = 300;
+    const kWave = 6;
+    const omega = 3;
+
+    const project = (ex, ey, zNorm) => {
+      const zScreen = zNorm * zLen;
+      const px = oxScreen + zScreen + ex * scaleX * 0.4;
+      const py = oyScreen - ey * scaleY - ex * scaleX * 0.15;
+      return [px, py];
+    };
+
+    ctx.strokeStyle = theme.axis + "66"; ctx.lineWidth = 1;
+    const [ax1, ay1] = project(0, 0, 0);
+    const [ax2, ay2] = project(0, 0, 1);
+    ctx.beginPath(); ctx.moveTo(ax1, ay1); ctx.lineTo(ax2, ay2); ctx.stroke();
+    ctx.fillStyle = theme.textDim; ctx.font = "10px monospace"; ctx.textAlign = "left";
+    ctx.fillText("z (k)", ax2 + 4, ay2 + 4);
+
+    ctx.strokeStyle = theme.trace1 + "44"; ctx.lineWidth = 1;
+    const [ex1, ey1] = project(1.3, 0, 0);
+    ctx.beginPath(); ctx.moveTo(ax1, ay1); ctx.lineTo(ex1, ey1); ctx.stroke();
+    ctx.fillStyle = theme.trace1; ctx.font = "10px monospace";
+    ctx.fillText("Ex", ex1 + 2, ey1);
+
+    ctx.strokeStyle = theme.accent3 + "44"; ctx.lineWidth = 1;
+    const [ex2, ey2] = project(0, 1.3, 0);
+    ctx.beginPath(); ctx.moveTo(ax1, ay1); ctx.lineTo(ex2, ey2); ctx.stroke();
+    ctx.fillStyle = theme.accent3;
+    ctx.fillText("Ey", ex2 + 2, ey2 - 4);
+
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    let first = true;
+    for (let i = 0; i <= nPts; i++) {
+      const zN = i / nPts;
+      const z = zN * kWave * 2 * Math.PI;
+      const phase = omega * t - z;
+      let ex, ey;
+      if (unpol) {
+        const seg = getUnpolPhase(zN);
+        ex = Math.cos(seg.angle) * Math.cos(phase + seg.delta);
+        ey = Math.sin(seg.angle) * Math.cos(phase + seg.delta);
+      } else {
+        ex = Ax * Math.cos(phase);
+        ey = Ay * Math.cos(phase + dRad);
+      }
+      const [px, py] = project(ex, ey, zN);
+      if (px < 0 || px > w) continue;
+      if (first) { ctx.moveTo(px, py); first = false; }
+      else ctx.lineTo(px, py);
+    }
+    ctx.strokeStyle = theme.accent2;
+    ctx.stroke();
+
+    let ex0, ey0;
+    if (unpol) {
+      const seg0 = getUnpolPhase(0);
+      ex0 = Math.cos(seg0.angle) * Math.cos(omega * t + seg0.delta);
+      ey0 = Math.sin(seg0.angle) * Math.cos(omega * t + seg0.delta);
+    } else {
+      ex0 = Ax * Math.cos(omega * t);
+      ey0 = Ay * Math.cos(omega * t + dRad);
+    }
+    const [vx, vy] = project(ex0, ey0, 0);
+    ctx.strokeStyle = theme.warn; ctx.lineWidth = 2.5;
+    ctx.shadowColor = theme.warn; ctx.shadowBlur = 6;
+    ctx.beginPath(); ctx.moveTo(ax1, ay1); ctx.lineTo(vx, vy); ctx.stroke();
+    ctx.fillStyle = theme.warn;
+    ctx.beginPath(); ctx.arc(vx, vy, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    const [pxProj, pyProj] = project(ex0, 0, 0);
+    const [pxProj2, pyProj2] = project(0, ey0, 0);
+    ctx.strokeStyle = theme.trace1 + "66"; ctx.lineWidth = 1; ctx.setLineDash([2, 2]);
+    ctx.beginPath(); ctx.moveTo(vx, vy); ctx.lineTo(pxProj, pyProj); ctx.stroke();
+    ctx.strokeStyle = theme.accent3 + "66";
+    ctx.beginPath(); ctx.moveTo(vx, vy); ctx.lineTo(pxProj2, pyProj2); ctx.stroke();
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = theme.warn; ctx.font = "bold 11px monospace"; ctx.textAlign = "left";
+    ctx.fillText("E(t)", vx + 6, vy - 6);
+
+    // ═══ 2D cross-section ═══
+    const s = setup(cRef2d.current);
+    s.ctx.clearRect(0, 0, s.w, s.h);
+    const scx = s.w / 2, scy = s.h / 2, sAmp = Math.min(s.w, s.h) * 0.35;
+
+    s.ctx.strokeStyle = theme.grid; s.ctx.lineWidth = 0.5;
+    s.ctx.beginPath(); s.ctx.moveTo(scx - sAmp * 1.2, scy); s.ctx.lineTo(scx + sAmp * 1.2, scy); s.ctx.stroke();
+    s.ctx.beginPath(); s.ctx.moveTo(scx, scy - sAmp * 1.2); s.ctx.lineTo(scx, scy + sAmp * 1.2); s.ctx.stroke();
+
+    s.ctx.fillStyle = theme.trace1; s.ctx.font = "11px monospace"; s.ctx.textAlign = "center";
+    s.ctx.fillText("Ex (H)", scx + sAmp * 1.2 + 16, scy + 4);
+    s.ctx.fillStyle = theme.accent3;
+    s.ctx.fillText("Ey (V)", scx, scy - sAmp * 1.2 - 6);
+
+    const trailLen = 250;
+    for (let i = 0; i < trailLen; i++) {
+      let exT, eyT;
+      if (unpol) {
+        const zSample = i / trailLen;
+        const seg = getUnpolPhase(zSample);
+        const phase = omega * t - zSample * kWave * 2 * Math.PI;
+        exT = Math.cos(seg.angle) * Math.cos(phase + seg.delta);
+        eyT = Math.sin(seg.angle) * Math.cos(phase + seg.delta);
+      } else {
+        const tBack = t - i * 0.015;
+        exT = Ax * Math.cos(omega * tBack);
+        eyT = Ay * Math.cos(omega * tBack + dRad);
+      }
+      const px = scx + exT * sAmp;
+      const py = scy - eyT * sAmp;
+      const alpha = Math.max(0.05, 1 - i / trailLen);
+      s.ctx.fillStyle = theme.accent2 + Math.round(alpha * 200).toString(16).padStart(2, "0");
+      s.ctx.fillRect(px - 1.2, py - 1.2, 2.4, 2.4);
+    }
+
+    const curPx = scx + ex0 * sAmp;
+    const curPy = scy - ey0 * sAmp;
+    s.ctx.strokeStyle = theme.warn; s.ctx.lineWidth = 2.5;
+    s.ctx.shadowColor = theme.warn; s.ctx.shadowBlur = 6;
+    s.ctx.beginPath(); s.ctx.moveTo(scx, scy); s.ctx.lineTo(curPx, curPy); s.ctx.stroke();
+    s.ctx.fillStyle = theme.warn;
+    s.ctx.beginPath(); s.ctx.arc(curPx, curPy, 4, 0, Math.PI * 2); s.ctx.fill();
+    s.ctx.shadowBlur = 0;
+
+    let polType = "линейная";
+    if (unpol) polType = "неполяризованный";
+    else if (Math.abs(delta - 90) < 3 && Math.abs(ampRatio - 1) < 0.05) polType = "круговая";
+    else if (Math.abs(delta - 270) < 3 && Math.abs(ampRatio - 1) < 0.05) polType = "круговая (обр.)";
+    else if (Math.abs(delta % 180) < 3 || Math.abs(delta % 180 - 180) < 3) polType = "линейная";
+    else polType = "эллиптическая";
+
+    s.ctx.fillStyle = theme.text; s.ctx.font = "bold 12px monospace"; s.ctx.textAlign = "center";
+    s.ctx.fillText(polType, scx, s.h - 8);
+    s.ctx.fillStyle = theme.textDim; s.ctx.font = "10px monospace";
+    s.ctx.fillText(`\u03B4 = ${unpol ? "случ." : delta + "\u00B0"}`, scx, 14);
+  }, [ampRatio, delta, unpol, theme]);
+
+  useEffect(() => {
+    let running = true;
+    const loop = () => { if (!running) return; tRef.current += 0.025; draw(tRef.current); animRef.current = requestAnimationFrame(loop); };
+    loop(); return () => { running = false; cancelAnimationFrame(animRef.current); };
+  }, [draw]);
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: theme.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+        Поляризация = траектория конца вектора E в плоскости, перпендикулярной распространению.
+        Сдвиг фаз δ между Ex и Ey задаёт тип. Для <b>одиночного фотона</b> те же состояния становятся базисом кубита:
+        H/V → |0⟩/|1⟩, диагональ ±45° → |+⟩/|−⟩, круговая L/R → полюса экватора сферы Блоха.
+      </p>
+      <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+        {PRESETS.map(p => (
+          <button key={p.id} onClick={() => applyPreset(p.id)} style={{
+            padding: "6px 14px", borderRadius: 6, fontSize: 12, fontWeight: 600, cursor: "pointer",
+            border: `1px solid ${preset === p.id ? theme.accent : theme.panelBorder}`,
+            background: preset === p.id ? theme.accent + "22" : theme.btnBg,
+            color: preset === p.id ? theme.accent : theme.text
+          }}>{p.label}</button>
+        ))}
+      </div>
+      {!unpol && (
+        <>
+          <Slider label="Амплитуда Ey/Ex" value={ampRatio} min={0} max={1.5} step={0.05} onChange={v => { setAmpRatio(v); setPreset("custom"); setUnpol(false); }} theme={theme} format={v => v.toFixed(2)} />
+          <Slider label="Сдвиг фаз δ" value={delta} min={0} max={360} step={1} onChange={v => { setDelta(v); setPreset("custom"); setUnpol(false); }} theme={theme} unit="°" />
+        </>
+      )}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div><Label>3D: волна E(z,t) — вид сбоку</Label><canvas ref={cRef3d} style={cs(theme, 300)} /></div>
+        <div><Label>Сечение: конец E (Lissajous)</Label><canvas ref={cRef2d} style={cs(theme, 300)} /></div>
+      </div>
+      <InfoBox text={
+        unpol ? "Неполяризованный свет: направление E хаотически меняется. На Lissajous — размытое пятно. Одиночный фотон из такого пучка — это смешанное состояние (центр сферы Блоха), а не чистый кубит."
+        : Math.abs(delta % 180) < 5 ? "Линейная поляризация: E колеблется вдоль прямой. Это базис H/V → |0⟩ и |1⟩, или диагональ ±45° → |+⟩ и |−⟩. Поляризационный кубик (PBS) разводит H и V по двум каналам — измерение в Z-базисе."
+        : Math.abs(delta - 90) < 5 && Math.abs(ampRatio - 1) < 0.1 ? "Круговая поляризация: |Ex| = |Ey|, δ = 90°. Конец E описывает окружность. Для фотона это состояния |L⟩ и |R⟩ — полюса «экваториальной» оси сферы Блоха. Получается из линейной пластинкой λ/4."
+        : `Эллиптическая поляризация: Ey/Ex = ${ampRatio.toFixed(2)}, δ = ${delta}°. Общий случай — произвольная точка сферы Блоха. Линейная и круговая — частные случаи.`
+      } theme={theme} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 2: SINGLE-PHOTON SOURCE (POISSON STATISTICS)
+// ═══════════════════════════════════════════════════════════════════════
+function PoissonTab({ theme }) {
+  const [mu, setMu] = useState(0.5); // mean photon number per pulse
+  const cAnim = useRef(null), cDist = useRef(null);
+  const animRef = useRef(null), tRef = useRef(0);
+  const pulsesRef = useRef([]);
+  const lastSpawnRef = useRef(0);
+  const tally = useRef({ vac: 0, one: 0, multi: 0, total: 0 });
+  const [counts, setCounts] = useState({ vac: 0, one: 0, multi: 0, total: 0 });
+
+  // Poisson sampler (Knuth)
+  const samplePoisson = (lam) => {
+    const L = Math.exp(-lam); let k = 0, p = 1;
+    do { k++; p *= Math.random(); } while (p > L);
+    return k - 1;
+  };
+  // Poisson pmf
+  const pmf = (n, lam) => { let f = 1; for (let i = 2; i <= n; i++) f *= i; return Math.exp(-lam) * Math.pow(lam, n) / f; };
+
+  const P0 = pmf(0, mu), P1 = pmf(1, mu);
+  const Pmulti = 1 - P0 - P1;
+
+  const draw = useCallback((t, dt) => {
+    // ── animated source → attenuator → detector ──
+    if (cAnim.current) {
+      const { ctx, w, h } = setup(cAnim.current);
+      ctx.clearRect(0, 0, w, h);
+      const midY = h * 0.5;
+      const srcX = 40, attX = w * 0.42, detX = w - 50;
+
+      // beam line
+      ctx.strokeStyle = theme.axis + "44"; ctx.lineWidth = 1; ctx.setLineDash([4, 4]);
+      ctx.beginPath(); ctx.moveTo(srcX, midY); ctx.lineTo(detX, midY); ctx.stroke(); ctx.setLineDash([]);
+
+      // laser source
+      ctx.fillStyle = theme.warn; ctx.strokeStyle = theme.warn; ctx.lineWidth = 2;
+      ctx.fillRect(srcX - 26, midY - 14, 26, 28);
+      ctx.fillStyle = theme.text; ctx.font = "10px monospace"; ctx.textAlign = "center";
+      ctx.fillText("лазер", srcX - 13, midY + 30);
+
+      // attenuator
+      ctx.fillStyle = theme.accent2 + "55"; ctx.strokeStyle = theme.accent2;
+      ctx.fillRect(attX - 6, midY - 24, 12, 48); ctx.strokeRect(attX - 6, midY - 24, 12, 48);
+      ctx.fillStyle = theme.textDim; ctx.fillText("аттенюатор", attX, midY - 32);
+      ctx.fillText("μ ↓", attX, midY + 40);
+
+      // detector (SNSPD)
+      const det = pulsesRef.current.find(p => p.flash > 0);
+      ctx.fillStyle = det ? theme.accent4 : theme.btnBg;
+      ctx.strokeStyle = theme.accent4; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(detX, midY, 16, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = theme.text; ctx.fillText("SNSPD", detX, midY + 34);
+
+      // spawn pulses
+      if (t - lastSpawnRef.current > 0.5) {
+        lastSpawnRef.current = t;
+        const n = samplePoisson(mu);
+        pulsesRef.current.push({ x: attX, n, flash: 0, counted: false });
+        tally.current.total++;
+        if (n === 0) tally.current.vac++;
+        else if (n === 1) tally.current.one++;
+        else tally.current.multi++;
+        setCounts({ ...tally.current });
+      }
+      // move + draw pulses (only those with n>=1 carry visible photons after attenuator)
+      pulsesRef.current.forEach(p => {
+        p.x += 150 * dt;
+        if (!p.counted && p.x >= detX - 16) { p.counted = true; if (p.n >= 1) p.flash = 1; }
+        if (p.flash > 0) p.flash -= dt * 3;
+        if (p.n >= 1 && p.x < detX) {
+          for (let j = 0; j < p.n; j++) {
+            const off = (j - (p.n - 1) / 2) * 8;
+            ctx.fillStyle = p.n === 1 ? theme.accent : theme.accent3;
+            ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 8;
+            ctx.beginPath(); ctx.arc(p.x, midY + off, 3.5, 0, Math.PI * 2); ctx.fill();
+            ctx.shadowBlur = 0;
+          }
+        }
+      });
+      pulsesRef.current = pulsesRef.current.filter(p => p.x < detX + 30 && !(p.flash <= 0 && p.x >= detX));
+
+      // legend
+      ctx.textAlign = "left"; ctx.font = "10px monospace";
+      ctx.fillStyle = theme.accent; ctx.fillText("● 1 фотон", 10, 16);
+      ctx.fillStyle = theme.accent3; ctx.fillText("●● ≥2 (многофотон)", 90, 16);
+    }
+
+    // ── Poisson distribution bars ──
+    if (cDist.current) {
+      const s = setup(cDist.current);
+      s.ctx.clearRect(0, 0, s.w, s.h);
+      const pad = 30, bw = (s.w - pad * 2) / 8, base = s.h - 24;
+      s.ctx.strokeStyle = theme.axis; s.ctx.lineWidth = 1;
+      s.ctx.beginPath(); s.ctx.moveTo(pad, base); s.ctx.lineTo(s.w - pad, base); s.ctx.stroke();
+      for (let n = 0; n <= 7; n++) {
+        const pn = pmf(n, mu);
+        const bh = pn * (base - 20);
+        const x = pad + n * bw + bw * 0.18, bwReal = bw * 0.64;
+        const col = n === 0 ? theme.textDim : n === 1 ? theme.accent : theme.accent3;
+        s.ctx.fillStyle = col + "cc";
+        s.ctx.fillRect(x, base - bh, bwReal, bh);
+        s.ctx.fillStyle = theme.textDim; s.ctx.font = "10px monospace"; s.ctx.textAlign = "center";
+        s.ctx.fillText(n, x + bwReal / 2, base + 14);
+        if (pn > 0.03) { s.ctx.fillStyle = col; s.ctx.fillText(pn.toFixed(2), x + bwReal / 2, base - bh - 4); }
+      }
+      s.ctx.fillStyle = theme.text; s.ctx.font = "bold 11px monospace"; s.ctx.textAlign = "left";
+      s.ctx.fillText("P(n) — Пуассон, μ = " + mu.toFixed(2), pad, 16);
+    }
+  }, [mu, theme]);
+
+  useEffect(() => {
+    let running = true, last = performance.now();
+    const loop = (now) => {
+      if (!running) return;
+      const dt = Math.min(0.05, (now - last) / 1000); last = now;
+      tRef.current += dt; draw(tRef.current, dt);
+      animRef.current = requestAnimationFrame(loop);
+    };
+    animRef.current = requestAnimationFrame(loop);
+    return () => { running = false; cancelAnimationFrame(animRef.current); };
+  }, [draw]);
+
+  const measFrac = counts.total > 0 ? (counts.multi / Math.max(1, counts.one + counts.multi) * 100) : 0;
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: theme.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+        Лазерный импульс — это когерентное состояние: число фотонов в нём случайно и подчиняется
+        распределению Пуассона P(n) = e<sup>−μ</sup>μ<sup>n</sup>/n!. Аттенюатор снижает среднее μ.
+        Для квантовой криптографии нужен ровно <b>один</b> фотон: мешает и вакуум (n=0), и опасны многофотонные импульсы (n≥2).
+      </p>
+      <Slider label="Среднее число фотонов μ" value={mu} min={0.02} max={3} step={0.02} onChange={setMu} theme={theme} format={v => v.toFixed(2)} />
+      <StatRow theme={theme} items={[
+        { l: "P(0) вакуум", v: (P0 * 100).toFixed(0) + "%", c: theme.textDim },
+        { l: "P(1) один", v: (P1 * 100).toFixed(0) + "%", c: theme.accent },
+        { l: "P(≥2) многофотон", v: (Pmulti * 100).toFixed(1) + "%", c: theme.accent3 },
+      ]} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div><Label>Поток импульсов → детектор</Label><canvas ref={cAnim} style={cs(theme, 240)} /></div>
+        <div><Label>Статистика числа фотонов</Label><canvas ref={cDist} style={cs(theme, 240)} /></div>
+      </div>
+      <InfoBox text={
+        mu < 0.15
+          ? `Очень малое μ = ${mu.toFixed(2)}: импульсы почти всегда пустые (P0 ≈ ${(P0 * 100).toFixed(0)}%), зато среди непустых доля опасных многофотонных мала (~${measFrac.toFixed(1)}% от срабатываний). Цена — низкая скорость генерации ключа.`
+          : mu > 1.2
+          ? `Большое μ = ${mu.toFixed(2)}: импульсы яркие, но часто содержат ≥2 фотонов (${(Pmulti * 100).toFixed(0)}%). Это «лазейка» для атаки расщепления числа фотонов (PNS) — Ева забирает лишний фотон. Для QKD так нельзя.`
+          : `μ ≈ ${mu.toFixed(2)}: компромисс. Истинный источник одиночных фотонов даёт P(1)→1 и P(≥2)→0, что не достижимо для ослабленного лазера. Реальные SNSPD-детекторы регистрируют отдельные фотоны с КПД >90%.`
+      } theme={theme} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 3: BLOCH SPHERE + GATES
+// ═══════════════════════════════════════════════════════════════════════
+function BlochTab({ theme }) {
+  const [theta, setTheta] = useState(60); // deg, polar from +z
+  const [phi, setPhi] = useState(30);     // deg, azimuth
+  const cRef = useRef(null);
+  const animRef = useRef(null), tRef = useRef(0);
+
+  // current bloch vector
+  const th = theta * Math.PI / 180, ph = phi * Math.PI / 180;
+  const bx = Math.sin(th) * Math.cos(ph), by = Math.sin(th) * Math.sin(ph), bz = Math.cos(th);
+  const P0 = Math.cos(th / 2) ** 2, P1 = Math.sin(th / 2) ** 2;
+
+  const applyGate = (g) => {
+    let nx = bx, ny = by, nz = bz;
+    if (g === "X") { ny = -by; nz = -bz; }
+    else if (g === "Y") { nx = -bx; nz = -bz; }
+    else if (g === "Z") { nx = -bx; ny = -by; }
+    else if (g === "H") { nx = bz; ny = -by; nz = bx; }
+    const nt = Math.acos(Math.max(-1, Math.min(1, nz)));
+    let npH = Math.atan2(ny, nx); if (npH < 0) npH += 2 * Math.PI;
+    setTheta(nt * 180 / Math.PI);
+    setPhi(npH * 180 / Math.PI);
+  };
+
+  const draw = useCallback((t) => {
+    if (!cRef.current) return;
+    const { ctx, w, h } = setup(cRef.current);
+    ctx.clearRect(0, 0, w, h);
+    const cx = w / 2, cy = h / 2, R = Math.min(w, h) * 0.36;
+    const az = 0.5 + Math.sin(t * 0.2) * 0.25, el = 0.42; // slow auto-rotation
+    const caz = Math.cos(az), saz = Math.sin(az), cel = Math.cos(el), sel = Math.sin(el);
+    const proj = (x, y, z) => {
+      const X = x * caz - y * saz, Y = x * saz + y * caz, Z = z;
+      return [cx + R * X, cy - R * (Z * cel - Y * sel), Y];
+    };
+
+    // sphere outline
+    ctx.strokeStyle = theme.axis + "66"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+
+    // equator (z=0) and meridian (y=0) as projected ellipses
+    const drawCircle3D = (fn, col, dashBack) => {
+      let prevDepth = null;
+      for (let i = 0; i <= 120; i++) {
+        const a = (i / 120) * 2 * Math.PI;
+        const [px, py, d] = proj(...fn(a));
+        const back = d < 0;
+        ctx.strokeStyle = col + (back ? "44" : "aa");
+        ctx.setLineDash(back && dashBack ? [3, 3] : []);
+        if (i === 0) { ctx.beginPath(); ctx.moveTo(px, py); }
+        else { ctx.lineTo(px, py); ctx.stroke(); ctx.beginPath(); ctx.moveTo(px, py); }
+        prevDepth = d;
+      }
+      ctx.setLineDash([]);
+    };
+    drawCircle3D(a => [Math.cos(a), Math.sin(a), 0], theme.accent2, true);
+    drawCircle3D(a => [Math.cos(a), 0, Math.sin(a)], theme.axis, true);
+
+    // axes
+    const drawAxis = (x, y, z, col, lbl) => {
+      const [x0, y0] = proj(0, 0, 0);
+      const [x1, y1] = proj(x, y, z);
+      ctx.strokeStyle = col + "88"; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = col; ctx.font = "11px monospace"; ctx.textAlign = "center";
+      ctx.fillText(lbl, x1, y1 + (z > 0 ? -6 : 14));
+    };
+    drawAxis(0, 0, 1.18, theme.accent, "|0⟩ H");
+    drawAxis(0, 0, -1.18, theme.accent, "|1⟩ V");
+    drawAxis(1.2, 0, 0, theme.trace2, "|+⟩");
+    drawAxis(-1.2, 0, 0, theme.trace2, "|−⟩");
+    drawAxis(0, 1.2, 0, theme.accent4, "|L⟩");
+    drawAxis(0, -1.2, 0, theme.accent4, "|R⟩");
+
+    // state vector
+    const [sx0, sy0] = proj(0, 0, 0);
+    const [sx1, sy1] = proj(bx, by, bz);
+    arrow2(ctx, sx0, sy0, sx1, sy1, theme.warn, 3, 10);
+    ctx.shadowColor = theme.warn; ctx.shadowBlur = 8;
+    ctx.fillStyle = theme.warn; ctx.beginPath(); ctx.arc(sx1, sy1, 4, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = theme.warn; ctx.font = "bold 12px monospace"; ctx.textAlign = "left";
+    ctx.fillText("|ψ⟩", sx1 + 8, sy1);
+  }, [bx, by, bz, theme]);
+
+  useEffect(() => {
+    let running = true;
+    const loop = () => { if (!running) return; tRef.current += 0.016; draw(tRef.current); animRef.current = requestAnimationFrame(loop); };
+    loop(); return () => { running = false; cancelAnimationFrame(animRef.current); };
+  }, [draw]);
+
+  const gates = [
+    { g: "X", c: theme.trace2, d: "НЕ" },
+    { g: "Y", c: theme.accent4, d: "Y" },
+    { g: "Z", c: theme.accent2, d: "фаза π" },
+    { g: "H", c: theme.accent, d: "Адамар" },
+  ];
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: theme.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+        Кубит: |ψ⟩ = cos(θ/2)|0⟩ + e<sup>iφ</sup>sin(θ/2)|1⟩ — точка на сфере Блоха.
+        Полюса — H/V (|0⟩/|1⟩), экватор — диагональные и круговые поляризации. Гейт = поворот этой точки;
+        алгоритм = последовательность поворотов + измерение статистики.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
+        <canvas ref={cRef} style={cs(theme, 320)} />
+        <div>
+          <Slider label="Полярный угол θ" value={theta} min={0} max={180} step={1} onChange={setTheta} theme={theme} unit="°" />
+          <Slider label="Азимут φ" value={phi} min={0} max={360} step={1} onChange={setPhi} theme={theme} unit="°" />
+          <Label>Применить гейт (поворот)</Label>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+            {gates.map(({ g, c, d }) => (
+              <button key={g} onClick={() => applyGate(g)} style={{
+                padding: "8px 12px", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer",
+                border: `1px solid ${c}`, background: c + "22", color: c, minWidth: 64
+              }}>{g}<div style={{ fontSize: 9, fontWeight: 400, opacity: 0.8 }}>{d}</div></button>
+            ))}
+          </div>
+          <StatRow theme={theme} items={[
+            { l: "P(0)", v: (P0 * 100).toFixed(0) + "%", c: theme.accent },
+            { l: "P(1)", v: (P1 * 100).toFixed(0) + "%", c: theme.accent3 },
+          ]} />
+          <div style={{ fontSize: 12, color: theme.textDim, fontFamily: "monospace", textAlign: "center" }}>
+            |ψ⟩ = {Math.cos(th / 2).toFixed(2)}·|0⟩ + e<sup>i{phi.toFixed(0)}°</sup>·{Math.sin(th / 2).toFixed(2)}·|1⟩
+          </div>
+        </div>
+      </div>
+      <InfoBox text={
+        "Гейт X = поворот на π вокруг оси X (классическое НЕ: меняет |0⟩↔|1⟩). Z добавляет относительную фазу π. " +
+        "Гейт Адамара H переводит полюс на экватор: |0⟩→|+⟩, |1⟩→|−⟩ — создаёт равную суперпозицию. " +
+        "Нажимайте гейты подряд: HH = I, XX = I, HZH = X. Любое чистое состояние кубита достижимо двумя углами (θ, φ)."
+      } theme={theme} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 4: EXPONENTIAL SCALING
+// ═══════════════════════════════════════════════════════════════════════
+function ScalingTab({ theme }) {
+  const [n, setN] = useState(10);
+  const cRef = useRef(null);
+
+  const log10_2 = Math.log10(2);
+  const fmtPow2 = (k) => {
+    const lg = k * log10_2; const ip = Math.floor(lg); const m = Math.pow(10, lg - ip);
+    if (k < 14) return Math.round(Math.pow(2, k)).toLocaleString("ru-RU");
+    return `${m.toFixed(1)}·10^${ip}`;
+  };
+  const bytes = Math.pow(2, n) * 16; // complex double
+  const lgBytes = n * log10_2 + Math.log10(16);
+  const fmtBytes = (lg) => {
+    const units = ["Б", "КБ", "МБ", "ГБ", "ТБ", "ПБ", "ЭБ", "ЗБ", "ЙБ"];
+    let idx = Math.floor(lg / 3); if (idx < 0) idx = 0;
+    if (idx >= units.length) { const ip = Math.floor(lg); const m = Math.pow(10, lg - ip); return `${m.toFixed(1)}·10^${ip} Б`; }
+    const m = Math.pow(10, lg - idx * 3);
+    return `${m.toFixed(1)} ${units[idx]}`;
+  };
+
+  const WORLD = Math.log10(6) + 21;   // ~6 ZB world storage 2025
+  const LAPTOP = Math.log10(1.6) + 10; // 16 GB
+  const DATACENTERS = 18;             // ~1 EB hyperscaler-ish
+  const nWorld = (WORLD - Math.log10(16)) / log10_2; // qubits to match world storage
+
+  useEffect(() => {
+    if (!cRef.current) return;
+    const { ctx, w, h } = setup(cRef.current);
+    ctx.clearRect(0, 0, w, h);
+    const padL = 46, padR = 16, padT = 18, padB = 26;
+    const plotW = w - padL - padR, plotH = h - padT - padB;
+    const nMax = 80, lgMax = 26;
+    const X = (nn) => padL + (nn / nMax) * plotW;
+    const Y = (lg) => padT + plotH - (lg / lgMax) * plotH;
+    grid(ctx, w, h, theme, 4, 8);
+
+    // reference horizontal lines
+    const refs = [
+      { lg: LAPTOP, c: theme.textDim, t: "ноутбук 16 ГБ" },
+      { lg: DATACENTERS, c: theme.accent4, t: "~1 ЭБ" },
+      { lg: WORLD, c: theme.accent3, t: "память мира ≈ 6 ЗБ" },
+    ];
+    refs.forEach(r => {
+      ctx.strokeStyle = r.c + "99"; ctx.lineWidth = 1; ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.moveTo(padL, Y(r.lg)); ctx.lineTo(w - padR, Y(r.lg)); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = r.c; ctx.font = "9px monospace"; ctx.textAlign = "right";
+      ctx.fillText(r.t, w - padR - 2, Y(r.lg) - 3);
+    });
+
+    // exponential curve: memory (log10 bytes) vs n
+    ctx.strokeStyle = theme.accent; ctx.lineWidth = 2.5;
+    ctx.beginPath();
+    for (let nn = 1; nn <= nMax; nn++) {
+      const lg = nn * log10_2 + Math.log10(16);
+      const yy = Math.min(lgMax, lg);
+      nn === 1 ? ctx.moveTo(X(nn), Y(yy)) : ctx.lineTo(X(nn), Y(yy));
+    }
+    ctx.stroke();
+
+    // Sycamore marker
+    ctx.strokeStyle = theme.warn + "aa"; ctx.lineWidth = 1; ctx.setLineDash([2, 2]);
+    ctx.beginPath(); ctx.moveTo(X(72), padT); ctx.lineTo(X(72), padT + plotH); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = theme.warn; ctx.font = "9px monospace"; ctx.textAlign = "center";
+    ctx.fillText("Sycamore 72", X(72), padT + 10);
+
+    // current n
+    const lgCur = Math.min(lgMax, lgBytes);
+    ctx.strokeStyle = theme.text; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(X(n), padT + plotH); ctx.lineTo(X(n), Y(lgCur)); ctx.stroke();
+    ctx.fillStyle = theme.warn; ctx.shadowColor = theme.warn; ctx.shadowBlur = 8;
+    ctx.beginPath(); ctx.arc(X(n), Y(lgCur), 5, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0;
+
+    // axes labels
+    ctx.fillStyle = theme.textDim; ctx.font = "10px monospace"; ctx.textAlign = "center";
+    ctx.fillText("число кубитов n", padL + plotW / 2, h - 6);
+    ctx.save(); ctx.translate(12, padT + plotH / 2); ctx.rotate(-Math.PI / 2);
+    ctx.fillText("память (log)", 0, 0); ctx.restore();
+    for (let nn = 0; nn <= nMax; nn += 20) { ctx.textAlign = "center"; ctx.fillText(nn, X(nn), padT + plotH + 14); }
+  }, [n, theme]);
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: theme.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+        Состояние n кубитов описывается 2<sup>n</sup> комплексными амплитудами — это 2·2<sup>n</sup>−2 вещественных параметра.
+        Чтобы просто <b>хранить</b> такое состояние классически, нужно 2<sup>n</sup> чисел. Рост экспоненциальный:
+        уже ~70 кубитов превосходят всю память человечества.
+      </p>
+      <Slider label="Число кубитов n" value={n} min={1} max={80} step={1} onChange={setN} theme={theme} />
+      <StatRow theme={theme} items={[
+        { l: "амплитуд 2ⁿ", v: fmtPow2(n), c: theme.accent },
+        { l: "параметров", v: fmtPow2(n) + "·2", c: theme.accent2 },
+        { l: "память", v: fmtBytes(lgBytes), c: theme.accent3 },
+      ]} />
+      <canvas ref={cRef} style={cs(theme, 280)} />
+      <InfoBox text={
+        n <= 30
+          ? `n = ${n}: ${fmtBytes(lgBytes)} — пока умещается на обычном компьютере. Классическая симуляция возможна.`
+          : n < Math.round(nWorld)
+          ? `n = ${n}: ${fmtBytes(lgBytes)}. Уже за пределами одного дата-центра — точная симуляция на классике практически невозможна.`
+          : `n = ${n}: ${fmtBytes(lgBytes)} — больше всей памяти человечества (≈6 ЗБ при n≈${Math.round(nWorld)}). Именно отсюда «квантовое превосходство»: Sycamore (72 кубита) за минуты делает то, что классике недоступно. Важная оговорка: настоящая многочастичная запутанность пока удерживается лишь на ~5–6 кубитах — остальное очень хрупко.`
+      } theme={theme} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 5: GROVER SEARCH
+// ═══════════════════════════════════════════════════════════════════════
+function GroverTab({ theme }) {
+  const [k, setK] = useState(3); // log2 N
+  const [iter, setIter] = useState(0);
+  const N = Math.pow(2, k);
+  const cBars = useRef(null), cCurve = useRef(null);
+
+  const thetaG = Math.asin(1 / Math.sqrt(N));
+  const optimal = Math.max(1, Math.round(Math.PI / (4 * thetaG) - 0.5));
+  const ampTarget = (m) => Math.sin((2 * m + 1) * thetaG);
+  const ampOther = (m) => N > 1 ? Math.cos((2 * m + 1) * thetaG) / Math.sqrt(N - 1) : 0;
+  const Ptarget = ampTarget(iter) ** 2;
+
+  useEffect(() => {
+    // bars of amplitudes
+    if (cBars.current) {
+      const { ctx, w, h } = setup(cBars.current);
+      ctx.clearRect(0, 0, w, h);
+      const target = Math.floor(N * 0.6);
+      const padL = 16, padR = 16, midY = h * 0.55, half = h * 0.42;
+      ctx.strokeStyle = theme.axis; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(padL, midY); ctx.lineTo(w - padR, midY); ctx.stroke();
+      const bw = (w - padL - padR) / N;
+      const aT = ampTarget(iter), aO = ampOther(iter);
+      for (let i = 0; i < N; i++) {
+        const a = i === target ? aT : aO;
+        const bh = a * half;
+        const x = padL + i * bw + bw * 0.12, bwr = bw * 0.76;
+        ctx.fillStyle = i === target ? theme.warn : theme.accent + "aa";
+        ctx.fillRect(x, midY - bh, bwr, bh);
+      }
+      ctx.fillStyle = theme.warn; ctx.font = "10px monospace"; ctx.textAlign = "center";
+      ctx.fillText("★ цель", padL + target * bw + bw / 2, midY + 16);
+      ctx.fillStyle = theme.text; ctx.font = "bold 11px monospace"; ctx.textAlign = "left";
+      ctx.fillText(`амплитуды, итерация ${iter}/${optimal}`, padL, 16);
+    }
+    // probability curve
+    if (cCurve.current) {
+      const s = setup(cCurve.current);
+      s.ctx.clearRect(0, 0, s.w, s.h);
+      const padL = 30, padR = 14, padT = 16, padB = 22;
+      const pw = s.w - padL - padR, ph = s.h - padT - padB;
+      const kMax = Math.max(optimal * 2, optimal + 3);
+      const X = (m) => padL + (m / kMax) * pw;
+      const Y = (p) => padT + ph - p * ph;
+      grid(s.ctx, s.w, s.h, theme, 4, 8);
+      s.ctx.strokeStyle = theme.accent; s.ctx.lineWidth = 2;
+      s.ctx.beginPath();
+      for (let m = 0; m <= kMax; m += 0.25) {
+        const p = Math.sin((2 * m + 1) * thetaG) ** 2;
+        m === 0 ? s.ctx.moveTo(X(m), Y(p)) : s.ctx.lineTo(X(m), Y(p));
+      }
+      s.ctx.stroke();
+      // optimal marker
+      s.ctx.strokeStyle = theme.accent4 + "aa"; s.ctx.setLineDash([3, 3]);
+      s.ctx.beginPath(); s.ctx.moveTo(X(optimal), padT); s.ctx.lineTo(X(optimal), padT + ph); s.ctx.stroke(); s.ctx.setLineDash([]);
+      s.ctx.fillStyle = theme.accent4; s.ctx.font = "9px monospace"; s.ctx.textAlign = "center";
+      s.ctx.fillText("оптимум", X(optimal), padT + 9);
+      // current point
+      s.ctx.fillStyle = theme.warn; s.ctx.shadowColor = theme.warn; s.ctx.shadowBlur = 8;
+      s.ctx.beginPath(); s.ctx.arc(X(iter), Y(Ptarget), 5, 0, Math.PI * 2); s.ctx.fill(); s.ctx.shadowBlur = 0;
+      s.ctx.fillStyle = theme.text; s.ctx.font = "bold 11px monospace"; s.ctx.textAlign = "left";
+      s.ctx.fillText("P(цель) от числа итераций", padL, 12);
+    }
+  }, [k, iter, N, theme]);
+
+  // clamp iter when N changes
+  useEffect(() => { if (iter > optimal * 2 + 2) setIter(0); }, [k]);
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: theme.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+        Поиск в неструктурированной базе из N элементов. Классически — в среднем N/2 проверок.
+        Гровер усиливает амплитуду нужного состояния: оракул помечает цель, диффузия отражает амплитуды относительно среднего.
+        За ~(π/4)√N итераций вероятность цели → 1.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 4 }}>
+        <Slider label="Размер базы N = 2ᵏ" value={k} min={2} max={8} step={1} onChange={setK} theme={theme} format={v => Math.pow(2, v)} />
+        <Slider label="Итераций Гровера" value={iter} min={0} max={Math.max(optimal * 2, optimal + 3)} step={1} onChange={setIter} theme={theme} />
+      </div>
+      <StatRow theme={theme} items={[
+        { l: "N", v: N, c: theme.accent },
+        { l: "оптимум √N", v: "~" + optimal, c: theme.accent4 },
+        { l: "классика", v: "~" + (N / 2), c: theme.textDim },
+        { l: "P(цель)", v: (Ptarget * 100).toFixed(1) + "%", c: theme.warn },
+      ]} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div><Label>Амплитуды состояний</Label><canvas ref={cBars} style={cs(theme, 230)} /></div>
+        <div><Label>Вероятность цели</Label><canvas ref={cCurve} style={cs(theme, 230)} /></div>
+      </div>
+      <InfoBox text={
+        iter === 0
+          ? `Старт: равная суперпозиция всех ${N} состояний, амплитуда каждого 1/√${N}. Цель пока неотличима.`
+          : iter < optimal
+          ? `Итерация ${iter}: амплитуда цели растёт. После оптимума (~${optimal}) она достигнет максимума ≈ 100%.`
+          : iter === optimal
+          ? `Оптимум ~${optimal} итераций при N=${N}: P(цель) ≈ ${(Ptarget * 100).toFixed(0)}%. Это всего ~√N шагов против N/2 у классики — квадратичное ускорение.`
+          : `Перебор: после оптимума усиление «переворачивается» и вероятность цели снова падает (P=${(Ptarget * 100).toFixed(0)}%). Важно остановиться вовремя — поэтому Гровер не даёт экспоненциального ускорения, только квадратичное.`
+      } theme={theme} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 6: ENTANGLEMENT + EPR CORRELATIONS
+// ═══════════════════════════════════════════════════════════════════════
+function EntangleTab({ theme }) {
+  const [stateId, setStateId] = useState("phi+");
+  const [angleB, setAngleB] = useState(0); // degrees, analyzer B (A fixed at 0)
+  const cCounts = useRef(null), cCurve = useRef(null);
+  const tallyRef = useRef([0, 0, 0, 0]); // 00,01,10,11
+  const [tick, setTick] = useState(0);
+  const animRef = useRef(null);
+
+  const a = 1 / Math.sqrt(2);
+  const STATES = {
+    "sep":  { label: "|00⟩ сепар.", amp: [1, 0, 0, 0], ent: false },
+    "phi+": { label: "Φ⁺", amp: [a, 0, 0, a], ent: true },
+    "phi-": { label: "Φ⁻", amp: [a, 0, 0, -a], ent: true },
+    "psi+": { label: "Ψ⁺", amp: [0, a, a, 0], ent: true },
+    "psi-": { label: "Ψ⁻", amp: [0, a, -a, 0], ent: true },
+  };
+  const st = STATES[stateId];
+
+  // joint probability for analyzer angles aA, aB (radians), outcomes oA,oB in {0,1}
+  const jointP = (amp, aA, aB) => {
+    const uA = [[Math.cos(aA), Math.sin(aA)], [-Math.sin(aA), Math.cos(aA)]];
+    const uB = [[Math.cos(aB), Math.sin(aB)], [-Math.sin(aB), Math.cos(aB)]];
+    const P = [0, 0, 0, 0];
+    for (let oA = 0; oA < 2; oA++) for (let oB = 0; oB < 2; oB++) {
+      let amplitude = 0;
+      for (let i = 0; i < 2; i++) for (let j = 0; j < 2; j++) {
+        amplitude += uA[oA][i] * uB[oB][j] * amp[i * 2 + j];
+      }
+      P[oA * 2 + oB] = amplitude * amplitude;
+    }
+    return P;
+  };
+  const corr = (P) => P[0] + P[3] - P[1] - P[2];
+  const Pnow = jointP(st.amp, 0, angleB * Math.PI / 180);
+  const Enow = corr(Pnow);
+
+  // reset tally on state/angle change
+  useEffect(() => { tallyRef.current = [0, 0, 0, 0]; setTick(0); }, [stateId, angleB]);
+
+  // Monte Carlo accumulation
+  useEffect(() => {
+    let running = true;
+    const loop = () => {
+      if (!running) return;
+      for (let s = 0; s < 6; s++) {
+        const r = Math.random(); let acc = 0, out = 0;
+        for (let i = 0; i < 4; i++) { acc += Pnow[i]; if (r < acc) { out = i; break; } }
+        tallyRef.current[out]++;
+      }
+      setTick(t => t + 1);
+      animRef.current = setTimeout(loop, 60);
+    };
+    loop();
+    return () => { running = false; clearTimeout(animRef.current); };
+  }, [stateId, angleB]);
+
+  useEffect(() => {
+    // amplitude bars + count bars
+    if (cCounts.current) {
+      const { ctx, w, h } = setup(cCounts.current);
+      ctx.clearRect(0, 0, w, h);
+      const labels = ["00", "01", "10", "11"];
+      const total = tallyRef.current.reduce((s, x) => s + x, 0) || 1;
+      const padL = 40, padR = 14, midY = h * 0.5, half = h * 0.32, bw = (w - padL - padR) / 4;
+      ctx.strokeStyle = theme.axis; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(padL, midY); ctx.lineTo(w - padR, midY); ctx.stroke();
+      ctx.fillStyle = theme.textDim; ctx.font = "9px monospace"; ctx.textAlign = "left";
+      ctx.fillText("амплитуда", 2, midY - half - 4);
+      ctx.fillText("частота", 2, midY + half + 12);
+      for (let i = 0; i < 4; i++) {
+        const x = padL + i * bw + bw * 0.16, bwr = bw * 0.68;
+        // amplitude (signed, top)
+        const ah = st.amp[i] * half;
+        ctx.fillStyle = (st.amp[i] >= 0 ? theme.accent : theme.accent3) + "cc";
+        ctx.fillRect(x, midY - Math.abs(ah), bwr, Math.abs(ah));
+        // observed frequency (bottom)
+        const fh = (tallyRef.current[i] / total) * half;
+        ctx.fillStyle = theme.warn + "cc";
+        ctx.fillRect(x, midY, bwr, fh);
+        ctx.fillStyle = theme.textDim; ctx.font = "10px monospace"; ctx.textAlign = "center";
+        ctx.fillText("|" + labels[i] + "⟩", x + bwr / 2, midY + half + 22);
+      }
+    }
+    // correlation curve E(angle)
+    if (cCurve.current) {
+      const s = setup(cCurve.current);
+      s.ctx.clearRect(0, 0, s.w, s.h);
+      const padL = 34, padR = 14, padT = 14, padB = 24;
+      const pw = s.w - padL - padR, ph = s.h - padT - padB;
+      const X = (deg) => padL + (deg / 90) * pw;
+      const Y = (e) => padT + ph / 2 - e * (ph / 2);
+      grid(s.ctx, s.w, s.h, theme, 4, 9);
+      s.ctx.strokeStyle = theme.axis; s.ctx.lineWidth = 1;
+      s.ctx.beginPath(); s.ctx.moveTo(padL, Y(0)); s.ctx.lineTo(s.w - padR, Y(0)); s.ctx.stroke();
+      s.ctx.strokeStyle = theme.accent2; s.ctx.lineWidth = 2;
+      s.ctx.beginPath();
+      for (let deg = 0; deg <= 90; deg += 2) {
+        const e = corr(jointP(st.amp, 0, deg * Math.PI / 180));
+        deg === 0 ? s.ctx.moveTo(X(deg), Y(e)) : s.ctx.lineTo(X(deg), Y(e));
+      }
+      s.ctx.stroke();
+      s.ctx.fillStyle = theme.warn; s.ctx.shadowColor = theme.warn; s.ctx.shadowBlur = 8;
+      s.ctx.beginPath(); s.ctx.arc(X(angleB), Y(Enow), 5, 0, Math.PI * 2); s.ctx.fill(); s.ctx.shadowBlur = 0;
+      s.ctx.fillStyle = theme.text; s.ctx.font = "bold 11px monospace"; s.ctx.textAlign = "left";
+      s.ctx.fillText("корреляция E(Δ)", padL, 11);
+      s.ctx.fillStyle = theme.textDim; s.ctx.font = "9px monospace"; s.ctx.textAlign = "center";
+      s.ctx.fillText("Δ угол анализатора B", padL + pw / 2, s.h - 5);
+      s.ctx.fillText("+1", padL - 16, Y(1) + 3); s.ctx.fillText("−1", padL - 16, Y(-1) + 3);
+    }
+  }, [stateId, angleB, tick, theme]);
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: theme.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+        Два кубита живут в тензорном произведении (4 амплитуды). Сепарабельное состояние раскладывается в произведение;
+        <b> запутанное</b> — нет. В состояниях Белла исход измерения A мгновенно определяет статистику B (корреляции ЭПР),
+        хотя по отдельности каждый результат случаен.
+      </p>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap" }}>
+        {Object.entries(STATES).map(([id, sv]) => (
+          <button key={id} onClick={() => setStateId(id)} style={{
+            padding: "6px 14px", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer",
+            border: `1px solid ${stateId === id ? theme.accent : theme.panelBorder}`,
+            background: stateId === id ? theme.accent + "22" : theme.btnBg,
+            color: stateId === id ? theme.accent : theme.text
+          }}>{sv.label}</button>
+        ))}
+      </div>
+      <Slider label="Угол анализатора B (A на 0°)" value={angleB} min={0} max={90} step={1} onChange={setAngleB} theme={theme} unit="°" />
+      <StatRow theme={theme} items={[
+        { l: "тип", v: st.ent ? "запутано" : "сепар.", c: st.ent ? theme.accent3 : theme.textDim },
+        { l: "E(Δ)", v: Enow.toFixed(2), c: theme.accent2 },
+        { l: "испытаний", v: tallyRef.current.reduce((s, x) => s + x, 0), c: theme.accent4 },
+      ]} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div><Label>Амплитуды и частоты исходов</Label><canvas ref={cCounts} style={cs(theme, 230)} /></div>
+        <div><Label>Корреляция vs угол</Label><canvas ref={cCurve} style={cs(theme, 230)} /></div>
+      </div>
+      <InfoBox text={
+        !st.ent
+          ? "Сепарабельное |00⟩: A и B независимы. Поворот анализатора B не создаёт корреляции с A — E плавно спадает как обычный закон Малюса для одной частицы."
+          : Math.abs(angleB) < 3
+          ? `${st.label}: при совпадающих базисах (Δ=0) исходы жёстко коррелированы (|E|=1). Узнав результат A, мы точно знаем B — это и есть «жуткое дальнодействие» ЭПР. Но без классического канала передать информацию так нельзя.`
+          : `${st.label}, Δ=${angleB}°: корреляция меняется как ±cos(2Δ). Именно нарушение классической границы на таких кривых проверяется в неравенствах Белла и доказывает реальность запутанности.`
+      } theme={theme} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 7: BB84 WITH EVE
+// ═══════════════════════════════════════════════════════════════════════
+function BB84Tab({ theme }) {
+  const [eve, setEve] = useState(false);
+  const [nQ, setNQ] = useState(120);
+  const [seed, setSeed] = useState(1);
+  const cRef = useRef(null);
+
+  const run = React.useMemo(() => {
+    const rows = [];
+    let sifted = 0, errors = 0;
+    for (let i = 0; i < nQ; i++) {
+      const aBit = Math.random() < 0.5 ? 0 : 1;
+      const aBasis = Math.random() < 0.5 ? 0 : 1; // 0=Z,1=X
+      let sBit = aBit, sBasis = aBasis; // what reaches Bob
+      let eveErr = false;
+      if (eve) {
+        const eBasis = Math.random() < 0.5 ? 0 : 1;
+        const eBit = (eBasis === aBasis) ? aBit : (Math.random() < 0.5 ? 0 : 1);
+        sBit = eBit; sBasis = eBasis; eveErr = (eBasis !== aBasis);
+      }
+      const bBasis = Math.random() < 0.5 ? 0 : 1;
+      const bBit = (bBasis === sBasis) ? sBit : (Math.random() < 0.5 ? 0 : 1);
+      const kept = aBasis === bBasis;
+      const err = kept && bBit !== aBit;
+      if (kept) { sifted++; if (err) errors++; }
+      rows.push({ aBit, aBasis, bBasis, bBit, kept, err });
+    }
+    return { rows, sifted, errors, qber: sifted ? errors / sifted : 0 };
+  }, [eve, nQ, seed]);
+
+  const THRESH = 0.11;
+  const secure = run.qber < THRESH;
+
+  useEffect(() => {
+    if (!cRef.current) return;
+    const { ctx, w, h } = setup(cRef.current);
+    ctx.clearRect(0, 0, w, h);
+    // stream of first cells
+    const cols = 24, rowsToShow = run.rows.slice(0, cols);
+    const cw = (w - 20) / cols, top = 24, ch = 22;
+    ctx.font = "9px monospace"; ctx.textAlign = "left"; ctx.fillStyle = theme.textDim;
+    ctx.fillText("базис Алисы", 2, top - 8);
+    ctx.fillText("просеяно / ошибка", 2, top + ch * 2 + 26);
+    rowsToShow.forEach((r, i) => {
+      const x = 12 + i * cw;
+      // alice basis row
+      ctx.fillStyle = (r.aBasis === 0 ? theme.accent : theme.accent2) + "cc";
+      ctx.fillRect(x + 1, top, cw - 2, ch);
+      ctx.fillStyle = theme.bg === "#0a0e17" ? "#0a0e17" : "#fff"; ctx.textAlign = "center"; ctx.font = "10px monospace";
+      ctx.fillText(r.aBasis === 0 ? "+" : "×", x + cw / 2, top + 15);
+      // sift/error row
+      const y2 = top + ch + 6;
+      ctx.fillStyle = !r.kept ? theme.btnBg : r.err ? theme.accent3 : theme.accent4;
+      ctx.fillRect(x + 1, y2, cw - 2, ch);
+      ctx.fillStyle = theme.text; ctx.fillText(!r.kept ? "·" : r.err ? "✗" : "✓", x + cw / 2, y2 + 15);
+    });
+    // QBER bar
+    const by = top + ch * 2 + 36, bw = w - 24, bh = 16;
+    ctx.fillStyle = theme.btnBg; ctx.fillRect(12, by, bw, bh);
+    ctx.fillStyle = run.qber < THRESH ? theme.accent4 : theme.accent3;
+    ctx.fillRect(12, by, bw * Math.min(1, run.qber / 0.5), bh);
+    // threshold marker
+    const tx = 12 + bw * (THRESH / 0.5);
+    ctx.strokeStyle = theme.warn; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(tx, by - 3); ctx.lineTo(tx, by + bh + 3); ctx.stroke();
+    ctx.fillStyle = theme.warn; ctx.font = "9px monospace"; ctx.textAlign = "center";
+    ctx.fillText("порог ~11%", tx, by - 6);
+    ctx.fillStyle = theme.text; ctx.font = "bold 11px monospace"; ctx.textAlign = "left";
+    ctx.fillText(`QBER = ${(run.qber * 100).toFixed(1)}%`, 12, by + bh + 14);
+  }, [run, theme]);
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: theme.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+        BB84: Алиса шлёт фотоны в случайных базисах (+ : H/V, × : ±45°), Боб измеряет в случайных базисах.
+        Оставляют биты, где базисы совпали (~половина). Перехват Евы (intercept-resend) неизбежно вносит ошибки:
+        на совпавших битах QBER ≈ 25% — это её и выдаёт.
+      </p>
+      <div style={{ display: "flex", gap: 10, marginBottom: 12, alignItems: "center", flexWrap: "wrap" }}>
+        <button onClick={() => setEve(e => !e)} style={{
+          padding: "8px 16px", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer",
+          border: `1px solid ${eve ? theme.accent3 : theme.accent4}`,
+          background: (eve ? theme.accent3 : theme.accent4) + "22", color: eve ? theme.accent3 : theme.accent4
+        }}>{eve ? "🕵 Ева перехватывает" : "🔒 Канал чист"}</button>
+        <button onClick={() => setSeed(s => s + 1)} style={{
+          padding: "8px 16px", borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: "pointer",
+          border: `1px solid ${theme.panelBorder}`, background: theme.btnBg, color: theme.textDim
+        }}>↻ Новый прогон</button>
+      </div>
+      <Slider label="Число фотонов" value={nQ} min={20} max={400} step={20} onChange={setNQ} theme={theme} />
+      <StatRow theme={theme} items={[
+        { l: "отправлено", v: nQ, c: theme.accent },
+        { l: "просеяно", v: run.sifted, c: theme.accent2 },
+        { l: "QBER", v: (run.qber * 100).toFixed(1) + "%", c: run.qber < THRESH ? theme.accent4 : theme.accent3 },
+        { l: "ключ", v: secure ? "годен" : "сброс", c: secure ? theme.accent4 : theme.accent3 },
+      ]} />
+      <canvas ref={cRef} style={cs(theme, 200)} />
+      <InfoBox text={
+        !eve
+          ? `Без Евы: на совпавших базисах Боб всегда получает бит Алисы, QBER ≈ ${(run.qber * 100).toFixed(1)}% (только статистический шум). Ключ принимается.`
+          : run.qber < THRESH
+          ? `С Евой, но прогон выпал удачным (QBER=${(run.qber * 100).toFixed(1)}%). Нажмите «Новый прогон» несколько раз — в среднем QBER ≈ 25%, что намного выше порога: подслушивание обнаруживается.`
+          : `Ева поймана: QBER=${(run.qber * 100).toFixed(1)}% ≫ порога ~11%. Перехват в случайном базисе портит половину «правильных» битов вдвое → 25% ошибок. Стороны видят это при сверке части ключа и сбрасывают его.`
+      } theme={theme} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 8: QUANTUM TELEPORTATION
+// ═══════════════════════════════════════════════════════════════════════
+function TeleportTab({ theme }) {
+  const [step, setStep] = useState(0); // 0..3
+  const [inTheta, setInTheta] = useState(70); // input state polar angle (phi=0 plane)
+  const [outcome, setOutcome] = useState(0); // 0..3 (b1 b2)
+  const cRef = useRef(null);
+  const animRef = useRef(null), tRef = useRef(0);
+
+  const th = inTheta * Math.PI / 180;
+  const inB = [Math.sin(th), 0, Math.cos(th)];
+  // Bob's qubit before correction depends on outcome (Pauli applied)
+  const paulis = [
+    { bits: "00", g: "I", v: [inB[0], inB[1], inB[2]] },
+    { bits: "01", g: "X", v: [inB[0], -inB[1], -inB[2]] },
+    { bits: "10", g: "Z", v: [-inB[0], -inB[1], inB[2]] },
+    { bits: "11", g: "ZX", v: [-inB[0], inB[1], -inB[2]] },
+  ];
+  const oc = paulis[outcome];
+  const bobV = step >= 3 ? inB : oc.v; // after correction equals input
+
+  const miniBloch = (ctx, cx, cy, R, v, col, label, mixed) => {
+    const az = 0.5, el = 0.42, caz = Math.cos(az), saz = Math.sin(az), cel = Math.cos(el), sel = Math.sin(el);
+    const proj = (x, y, z) => [cx + R * (x * caz - y * saz), cy - R * (z * cel - (x * saz + y * caz) * sel)];
+    ctx.strokeStyle = theme.axis + "66"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.stroke();
+    // equator
+    ctx.strokeStyle = theme.accent2 + "55"; ctx.beginPath();
+    for (let i = 0; i <= 60; i++) { const a = i / 60 * 2 * Math.PI; const [px, py] = proj(Math.cos(a), Math.sin(a), 0); i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py); }
+    ctx.stroke();
+    ctx.fillStyle = theme.textDim; ctx.font = "9px monospace"; ctx.textAlign = "center";
+    ctx.fillText(label, cx, cy + R + 14);
+    if (mixed) { ctx.fillStyle = theme.textDim; ctx.font = "16px monospace"; ctx.fillText("?", cx, cy + 5); return; }
+    const [ox, oy] = proj(0, 0, 0); const [vx, vy] = proj(v[0], v[1], v[2]);
+    arrow2(ctx, ox, oy, vx, vy, col, 2.5, 8);
+    ctx.fillStyle = col; ctx.beginPath(); ctx.arc(vx, vy, 3, 0, Math.PI * 2); ctx.fill();
+  };
+
+  const draw = useCallback((t) => {
+    if (!cRef.current) return;
+    const { ctx, w, h } = setup(cRef.current);
+    ctx.clearRect(0, 0, w, h);
+    const aliceX = w * 0.2, bobX = w * 0.8, midY = h * 0.32;
+
+    // EPR link
+    ctx.strokeStyle = theme.accent4 + (step >= 1 ? "55" : "cc"); ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (let i = 0; i <= 40; i++) { const x = aliceX + (bobX - aliceX) * i / 40; const y = midY + Math.sin(i * 0.8) * 5; i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y); }
+    ctx.stroke();
+    ctx.fillStyle = theme.accent4; ctx.font = "10px monospace"; ctx.textAlign = "center";
+    ctx.fillText("ЭПР-пара (Белл)", (aliceX + bobX) / 2, midY - 10);
+
+    // nodes
+    const node = (x, lbl, on) => {
+      ctx.fillStyle = on ? theme.accent + "22" : theme.btnBg; ctx.strokeStyle = on ? theme.accent : theme.panelBorder; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(x, midY, 22, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = theme.text; ctx.font = "bold 12px monospace"; ctx.textAlign = "center";
+      ctx.fillText(lbl, x, midY + 4);
+    };
+    node(aliceX, "Алиса", step <= 1);
+    node(bobX, "Боб", step >= 2);
+
+    // input state at Alice
+    ctx.fillStyle = theme.warn; ctx.font = "10px monospace"; ctx.textAlign = "center";
+    ctx.fillText("|ψ⟩", aliceX, midY - 30);
+
+    // classical channel (2 bits)
+    const ccY = h * 0.62;
+    ctx.strokeStyle = theme.textDim + "66"; ctx.lineWidth = 1; ctx.setLineDash([5, 4]);
+    ctx.beginPath(); ctx.moveTo(aliceX, ccY); ctx.lineTo(bobX, ccY); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = theme.textDim; ctx.font = "9px monospace"; ctx.textAlign = "center";
+    ctx.fillText("классический канал (2 бита)", (aliceX + bobX) / 2, ccY + 16);
+    if (step >= 1) {
+      // bits sitting at Alice or moving
+      let bx = aliceX;
+      if (step === 2) { const frac = (Math.sin(t * 2) * 0.5 + 0.5); bx = aliceX + (bobX - aliceX) * frac; }
+      else if (step >= 3) bx = bobX;
+      ctx.fillStyle = theme.warn; ctx.font = "bold 13px monospace";
+      ctx.fillText(oc.bits, bx, ccY - 6);
+    }
+
+    // step caption + correction box
+    ctx.fillStyle = theme.text; ctx.font = "bold 12px monospace"; ctx.textAlign = "center";
+    const caps = [
+      "1) Общая пара Белла. У Алисы — неизвестный |ψ⟩.",
+      "2) Измерение Белла у Алисы → 2 классических бита. |ψ⟩ разрушен.",
+      "3) Биты летят к Бобу по классическому каналу (≤ скорости света).",
+      `4) Боб применяет ${oc.g} → восстанавливает |ψ⟩.`,
+    ];
+    ctx.fillText(caps[step], w / 2, h - 10);
+    if (step >= 3) {
+      ctx.strokeStyle = theme.accent3; ctx.lineWidth = 2;
+      ctx.strokeRect(bobX - 18, midY + 30, 36, 20);
+      ctx.fillStyle = theme.accent3; ctx.font = "bold 11px monospace";
+      ctx.fillText(oc.g, bobX, midY + 44);
+    }
+  }, [step, outcome, inTheta, theme]);
+
+  useEffect(() => {
+    let running = true;
+    const loop = () => { if (!running) return; tRef.current += 0.016; draw(tRef.current); animRef.current = requestAnimationFrame(loop); };
+    loop(); return () => { running = false; cancelAnimationFrame(animRef.current); };
+  }, [draw]);
+
+  const fidelity = step >= 3 ? 1 : (step === 0 ? 0 : (1 + (oc.v[0] * inB[0] + oc.v[1] * inB[1] + oc.v[2] * inB[2])) / 2);
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: theme.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+        Телепортация переносит <b>состояние</b> кубита, а не частицу. Алиса и Боб делят пару Белла.
+        Алиса делает совместное измерение Белла своего |ψ⟩ и своей половины → 2 классических бита.
+        Боб по этим битам применяет поправку Паули и получает точную копию |ψ⟩. Оригинал у Алисы разрушается (нет клонирования).
+      </p>
+      <Slider label="Входное состояние θ" value={inTheta} min={0} max={180} step={1} onChange={setInTheta} theme={theme} unit="°" />
+      <div style={{ display: "flex", gap: 8, marginBottom: 12, flexWrap: "wrap", alignItems: "center" }}>
+        {[0, 1, 2, 3].map(s => (
+          <button key={s} onClick={() => setStep(s)} style={{
+            padding: "6px 14px", borderRadius: 6, fontSize: 13, fontWeight: 700, cursor: "pointer",
+            border: `1px solid ${step === s ? theme.accent : theme.panelBorder}`,
+            background: step === s ? theme.accent + "22" : theme.btnBg, color: step === s ? theme.accent : theme.text
+          }}>Шаг {s + 1}</button>
+        ))}
+        <button onClick={() => { setOutcome(Math.floor(Math.random() * 4)); setStep(1); }} style={{
+          padding: "6px 14px", borderRadius: 6, fontSize: 13, fontWeight: 500, cursor: "pointer",
+          border: `1px solid ${theme.panelBorder}`, background: theme.btnBg, color: theme.textDim
+        }}>🎲 Новое измерение</button>
+      </div>
+      <StatRow theme={theme} items={[
+        { l: "биты", v: step >= 1 ? oc.bits : "—", c: theme.warn },
+        { l: "поправка", v: step >= 1 ? oc.g : "—", c: theme.accent3 },
+        { l: "точность", v: (fidelity * 100).toFixed(0) + "%", c: fidelity > 0.99 ? theme.accent4 : theme.textDim },
+      ]} />
+      <canvas ref={cRef} style={cs(theme, 230)} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 12 }}>
+        <div><Label>Вход |ψ⟩ (у Алисы)</Label><canvas ref={el => { if (el) { const s = setup(el); s.ctx.clearRect(0, 0, s.w, s.h); miniBloch(s.ctx, s.w / 2, s.h / 2, Math.min(s.w, s.h) * 0.32, inB, theme.warn, "вход"); } }} style={cs(theme, 160)} /></div>
+        <div><Label>Кубит Боба</Label><canvas ref={el => { if (el) { const s = setup(el); s.ctx.clearRect(0, 0, s.w, s.h); miniBloch(s.ctx, s.w / 2, s.h / 2, Math.min(s.w, s.h) * 0.32, bobV, step >= 3 ? theme.accent4 : theme.accent3, step >= 3 ? "восстановлен" : "до поправки", step === 0); } }} style={cs(theme, 160)} /></div>
+      </div>
+      <InfoBox text={
+        step === 0 ? "Шаг 1: Боб держит половину запутанной пары — сама по себе она «пустая» (максимально смешанная, центр сферы). Информации о |ψ⟩ в ней пока нет."
+        : step === 1 ? `Шаг 2: измерение Белла даёт случайный исход ${oc.bits} (4 равновероятных). Кубит Боба мгновенно становится ${oc.g}|ψ⟩ — повёрнутой версией входа. Но какой именно — Боб ещё не знает.`
+        : step === 2 ? "Шаг 3: 2 бита идут по обычному каналу. Без них Боб не знает, какую поправку делать — поэтому быстрее света информацию не передать."
+        : `Шаг 4: зная биты ${oc.bits}, Боб применяет ${oc.g} и получает точную |ψ⟩ (точность 100%). У Алисы оригинал уже разрушен — теорема о невозможности клонирования соблюдена.`
+      } theme={theme} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MAIN APP
+// ═══════════════════════════════════════════════════════════════════════
+function App() {
+  const [themeKey, setThemeKey] = useState("dark");
+  const [tab, setTab] = useState("polarization");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const t = THEMES[themeKey];
+  const currentTab = TABS.find(tb => tb.id === tab);
+
+  return (
+    <div data-theme={themeKey} style={{ minHeight: "100vh", background: t.bg, color: t.text, fontFamily: "'Segoe UI','Noto Sans',system-ui,sans-serif", transition: "background 0.3s, color 0.3s", padding: "20px 16px" }}>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&display=swap');
+        input[type=range]::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; border-radius: 50%; background: ${t.sliderThumb}; cursor: pointer; box-shadow: 0 0 6px ${t.sliderThumb}88; }
+        input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; border: none; background: ${t.sliderThumb}; cursor: pointer; }
+        * { box-sizing: border-box; } ::selection { background: ${t.accent}44; }
+      `}</style>
+      <div style={{ maxWidth: 960, margin: "0 auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}><span style={{ color: t.accent }}>⚛</span> Основы квантовых вычислений <span style={{ color: t.accent }}>⚛</span></h1>
+            <div style={{ fontSize: 12, color: t.textDim, marginTop: 2 }}>Интерактивные демонстрации · Лекция 4</div>
+          </div>
+          <button onClick={() => setThemeKey(themeKey === "dark" ? "light" : "dark")} style={{ padding: "6px 14px", borderRadius: 20, border: `1px solid ${t.panelBorder}`, background: t.btnBg, color: t.text, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
+            {themeKey === "dark" ? "☀ Светлая" : "🌙 Тёмная"}
+          </button>
+        </div>
+
+        <div style={{ position: "relative", marginBottom: 20 }}>
+          <button onClick={() => setMenuOpen(!menuOpen)} style={{
+            width: "100%", padding: "12px 18px", borderRadius: 10,
+            border: `1px solid ${t.dropBorder}`, background: t.dropBg,
+            color: t.text, cursor: "pointer", fontSize: 15, fontWeight: 600,
+            display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: t.shadow
+          }}>
+            <span><span style={{ color: t.accent, marginRight: 8 }}>▸</span>{currentTab?.label}</span>
+            <span style={{ color: t.textDim, fontSize: 12, transform: menuOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>▼</span>
+          </button>
+          {menuOpen && (
+            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4, zIndex: 100, background: t.dropBg, border: `1px solid ${t.dropBorder}`, borderRadius: 10, boxShadow: t.shadow, overflow: "hidden" }}>
+              {TABS.map(tb => (
+                <button key={tb.id} onClick={() => { setTab(tb.id); setMenuOpen(false); }} style={{
+                  width: "100%", padding: "11px 18px", border: "none", cursor: "pointer",
+                  background: tab === tb.id ? t.accent + "22" : "transparent",
+                  color: tab === tb.id ? t.accent : t.text,
+                  fontSize: 14, fontWeight: tab === tb.id ? 700 : 400,
+                  textAlign: "left", display: "block", borderBottom: `1px solid ${t.dropBorder}22`
+                }}
+                  onMouseEnter={e => { if (tab !== tb.id) e.target.style.background = t.accent + "11"; }}
+                  onMouseLeave={e => { if (tab !== tb.id) e.target.style.background = "transparent"; }}
+                >{tb.label}</button>
+              ))}
+            </div>
+          )}
+        </div>
+        {menuOpen && <div style={{ position: "fixed", inset: 0, zIndex: 99 }} onClick={() => setMenuOpen(false)} />}
+
+        <div style={{ background: t.panel, borderRadius: 14, padding: 24, border: `1px solid ${t.panelBorder}`, boxShadow: t.shadow }}>
+          {tab === "polarization" && <PolarizationTab theme={t} />}
+          {tab === "poisson" && <PoissonTab theme={t} />}
+          {tab === "bloch" && <BlochTab theme={t} />}
+          {tab === "scaling" && <ScalingTab theme={t} />}
+          {tab === "grover" && <GroverTab theme={t} />}
+          {tab === "entangle" && <EntangleTab theme={t} />}
+          {tab === "bb84" && <BB84Tab theme={t} />}
+          {tab === "teleport" && <TeleportTab theme={t} />}
+        </div>
+        <div style={{ textAlign: "center", fontSize: 11, color: t.textDim, marginTop: 16, opacity: 0.6 }}>
+          Лекция 4 · Основы квантовых вычислений · 8 интерактивных демонстраций · Innopolis 2025
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(App));
+  </script>
+</body>
+</html>

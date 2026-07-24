@@ -1,0 +1,1430 @@
+<!DOCTYPE html>
+<html lang="ru"><head><meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Ямы и барьеры — Интерактивные демонстрации</title>
+  <meta name="description" content="10 интерактивных демонстраций по квантовой механике ям и барьеров: волновой пакет, потенциальная ступенька, туннелирование сквозь барьер, резонансы над барьером и эффект Рамзауэра, опыт с двумя призмами, альфа-распад, сканирующий туннельный микроскоп, бесконечная и конечная потенциальные ямы, квантовый гармонический осциллятор.">
+  <link rel="icon" href="data:image/svg+xml,&lt;svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'&gt;&lt;text y='28' font-size='28'&gt;%E2%9A%9B%EF%B8%8F&lt;/text&gt;&lt;/svg&gt;">
+  <style>
+    * { margin: 0; padding: 0; }
+    body { overflow-x: hidden; }
+    #root { min-height: 100vh; }
+  </style>
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="text/babel">
+const { useState, useRef, useEffect, useCallback } = React;
+
+const THEMES = {
+  dark: {
+    bg: "#0a0e17", panel: "#111827", panelBorder: "#1e293b",
+    text: "#e2e8f0", textDim: "#94a3b8", accent: "#22d3ee",
+    accent2: "#a78bfa", accent3: "#f472b6", accent4: "#34d399",
+    warn: "#fbbf24", grid: "#1e293b", axis: "#475569",
+    canvasBg: "#0f172a", trace1: "#22d3ee", trace2: "#f472b6",
+    trace3: "#a78bfa", trace4: "#34d399", trace5: "#fbbf24",
+    btnBg: "#1e293b", sliderTrack: "#334155", sliderThumb: "#22d3ee",
+    shadow: "0 4px 24px rgba(0,0,0,0.5)",
+    dropBg: "#1e293b", dropBorder: "#334155"
+  },
+  light: {
+    bg: "#f8fafc", panel: "#ffffff", panelBorder: "#e2e8f0",
+    text: "#1e293b", textDim: "#64748b", accent: "#0891b2",
+    accent2: "#7c3aed", accent3: "#db2777", accent4: "#059669",
+    warn: "#d97706", grid: "#e2e8f0", axis: "#94a3b8",
+    canvasBg: "#f1f5f9", trace1: "#0891b2", trace2: "#db2777",
+    trace3: "#7c3aed", trace4: "#059669", trace5: "#d97706",
+    btnBg: "#e2e8f0", sliderTrack: "#cbd5e1", sliderThumb: "#0891b2",
+    shadow: "0 4px 24px rgba(0,0,0,0.08)",
+    dropBg: "#ffffff", dropBorder: "#e2e8f0"
+  }
+};
+
+const TABS = [
+  { id: "packet", label: "1. Волновой пакет" },
+  { id: "step", label: "2. Потенциальная ступенька" },
+  { id: "barrier", label: "3. Барьер и туннелирование" },
+  { id: "resonance", label: "4. Резонансы над барьером" },
+  { id: "prisms", label: "5. Две призмы (нарушенное ПВО)" },
+  { id: "alpha", label: "6. Альфа-распад" },
+  { id: "stm", label: "7. Туннельный микроскоп (СТМ)" },
+  { id: "infwell", label: "8. Яма с бесконечными стенками" },
+  { id: "finwell", label: "9. Яма с конечными стенками" },
+  { id: "sho", label: "10. Гармонический осциллятор" },
+];
+
+// ─── Shared UI ──────────────────────────────────────────────────────
+function Slider({ label, value, min, max, step, onChange, theme, unit = "", format }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, color: theme.textDim, marginBottom: 3 }}>
+        <span>{label}</span>
+        <span style={{ color: theme.accent, fontFamily: "monospace", fontWeight: 600 }}>{format ? format(value) : value}{unit}</span>
+      </div>
+      <input type="range" min={min} max={max} step={step} value={value} onChange={e => onChange(Number(e.target.value))}
+        style={{ width: "100%", height: 6, appearance: "none", background: theme.sliderTrack, borderRadius: 3, outline: "none", cursor: "pointer", accentColor: theme.sliderThumb }} />
+    </div>
+  );
+}
+function InfoBox({ text, theme }) {
+  return <div style={{ padding: "10px 14px", borderRadius: 8, fontSize: 13, lineHeight: 1.6, background: theme.accent + "11", border: `1px solid ${theme.accent}33`, color: theme.textDim, marginTop: 10 }}>💡 {text}</div>;
+}
+function Label({ children }) {
+  return <div style={{ fontSize: 11, marginBottom: 4, textTransform: "uppercase", letterSpacing: 1, opacity: 0.6 }}>{children}</div>;
+}
+const cs = (t, h = 220) => ({ width: "100%", height: h, borderRadius: 8, background: t.canvasBg, border: `1px solid ${t.panelBorder}`, display: "block" });
+
+function setup(c) {
+  const d = window.devicePixelRatio || 1, r = c.getBoundingClientRect();
+  c.width = r.width * d; c.height = r.height * d;
+  const x = c.getContext("2d"); x.scale(d, d);
+  return { ctx: x, w: r.width, h: r.height };
+}
+function grid(ctx, w, h, t, rows = 4, cols = 8) {
+  ctx.strokeStyle = t.grid; ctx.lineWidth = 0.5;
+  for (let i = 0; i <= cols; i++) { ctx.beginPath(); ctx.moveTo((i / cols) * w, 0); ctx.lineTo((i / cols) * w, h); ctx.stroke(); }
+  for (let i = 0; i <= rows; i++) { ctx.beginPath(); ctx.moveTo(0, (i / rows) * h); ctx.lineTo(w, (i / rows) * h); ctx.stroke(); }
+}
+function arrow2(ctx, x1, y1, x2, y2, color, lw, head = 8) {
+  const dx = x2 - x1, dy = y2 - y1, len = Math.hypot(dx, dy);
+  if (len < 1) return;
+  const ux = dx / len, uy = dy / len;
+  ctx.strokeStyle = color; ctx.fillStyle = color; ctx.lineWidth = lw;
+  ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x2, y2);
+  ctx.lineTo(x2 - head * ux + head * 0.45 * uy, y2 - head * uy - head * 0.45 * ux);
+  ctx.lineTo(x2 - head * ux - head * 0.45 * uy, y2 - head * uy + head * 0.45 * ux);
+  ctx.closePath(); ctx.fill();
+}
+function StatRow({ items, theme }) {
+  return (
+    <div style={{ display: "flex", gap: 12, marginBottom: 14, justifyContent: "center", flexWrap: "wrap" }}>
+      {items.map((it, i) => (
+        <div key={i} style={{ textAlign: "center", padding: "6px 14px", borderRadius: 8, background: it.c + "11", border: `1px solid ${it.c}33`, minWidth: 70 }}>
+          <div style={{ fontSize: 11, color: theme.textDim }}>{it.l}</div>
+          <div style={{ fontSize: 17, fontWeight: 700, color: it.c, fontFamily: "monospace" }}>{it.v}</div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Complex arithmetic (a = [re, im]) ──────────────────────────────
+const C = {
+  add: (a, b) => [a[0] + b[0], a[1] + b[1]],
+  sub: (a, b) => [a[0] - b[0], a[1] - b[1]],
+  mul: (a, b) => [a[0] * b[0] - a[1] * b[1], a[0] * b[1] + a[1] * b[0]],
+  div: (a, b) => { const d = b[0] * b[0] + b[1] * b[1]; return [(a[0] * b[0] + a[1] * b[1]) / d, (a[1] * b[0] - a[0] * b[1]) / d]; },
+  exp: (a) => { const e = Math.exp(a[0]); return [e * Math.cos(a[1]), e * Math.sin(a[1])]; },
+  scale: (a, s) => [a[0] * s, a[1] * s],
+  abs2: (a) => a[0] * a[0] + a[1] * a[1],
+  abs: (a) => Math.hypot(a[0], a[1]),
+};
+
+// ─── 1D scattering on piecewise-constant potential (ħ = m = 1) ──────
+// Us: potential per region (length n). xs: boundary positions (length n-1).
+// Incident unit wave from left. Returns { r, t, R, T, ks, amps, psi(x) }.
+function scatter1D(Us, xs, E) {
+  const n = Us.length;
+  // wavevector per region: k = sqrt(2(E-U)); evanescent -> [0, kappa]
+  const ks = Us.map(U => {
+    const v = 2 * (E - U);
+    return v >= 0 ? [Math.sqrt(v), 0] : [0, Math.sqrt(-v)];
+  });
+  // amplitudes A e^{ikx} + B e^{-ikx}; start rightmost as transmitted unit
+  let amps = new Array(n);
+  amps[n - 1] = { A: [1, 0], B: [0, 0] };
+  for (let i = n - 2; i >= 0; i--) {
+    const xb = xs[i], kL = ks[i], kR = ks[i + 1];
+    // exponentials at boundary
+    const EpR = C.exp([-kR[1] * xb, kR[0] * xb]);   // e^{i kR xb}
+    const EmR = C.exp([kR[1] * xb, -kR[0] * xb]);   // e^{-i kR xb}
+    const EpL = C.exp([-kL[1] * xb, kL[0] * xb]);
+    const EmL = C.exp([kL[1] * xb, -kL[0] * xb]);
+    const AR = amps[i + 1].A, BR = amps[i + 1].B;
+    const rhs1 = C.add(C.mul(AR, EpR), C.mul(BR, EmR));
+    const rhs2 = C.mul(kR, C.sub(C.mul(AR, EpR), C.mul(BR, EmR)));
+    const term = C.div(rhs2, kL);
+    const AL = C.div(C.add(rhs1, term), C.scale(EpL, 2));
+    const BL = C.div(C.sub(rhs1, term), C.scale(EmL, 2));
+    amps[i] = { A: AL, B: BL };
+  }
+  // normalize so incident A0 = 1
+  const A0 = amps[0].A;
+  amps = amps.map(a => ({ A: C.div(a.A, A0), B: C.div(a.B, A0) }));
+  const r = amps[0].B;
+  const t = amps[n - 1].A;
+  const R = C.abs2(r);
+  const k0 = ks[0][0], kN = ks[n - 1][0];
+  const T = (k0 > 1e-9 && kN > 1e-9) ? (kN / k0) * C.abs2(t) : 0;
+  const psi = (x) => {
+    let reg = 0;
+    while (reg < n - 1 && x > xs[reg]) reg++;
+    const k = ks[reg], A = amps[reg].A, B = amps[reg].B;
+    const ep = C.exp([-k[1] * x, k[0] * x]);
+    const em = C.exp([k[1] * x, -k[0] * x]);
+    return C.add(C.mul(A, ep), C.mul(B, em));
+  };
+  return { r, t, R, T, ks, amps, psi };
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 1: WAVE PACKET
+// ═══════════════════════════════════════════════════════════════════════
+function PacketTab({ theme }) {
+  const [k0, setK0] = useState(3);
+  const [dk, setDk] = useState(0.5);
+  const cSpec = useRef(null), cPsi = useRef(null);
+  const animRef = useRef(null), tRef = useRef(0);
+  const statRef = useRef({ dx: 0 });
+  const [stat, setStat] = useState({ dx: 0 });
+
+  const draw = useCallback((t) => {
+    const Xmax = 14, x0 = -Xmax * 0.7, vg = k0;
+    const center = x0 + vg * t;
+    if (center > Xmax * 0.85) { tRef.current = 0; }
+
+    const Nk = 61, kmin = Math.max(0.02, k0 - 4 * dk), kmax = k0 + 4 * dk;
+    const ks = [], ws = []; let wsum = 0;
+    for (let j = 0; j < Nk; j++) { const k = kmin + (kmax - kmin) * j / (Nk - 1); const w = Math.exp(-((k - k0) ** 2) / (2 * dk * dk)); ks.push(k); ws.push(w); wsum += w; }
+    for (let j = 0; j < Nk; j++) ws[j] /= wsum;
+
+    const Npx = 240, xs = [], reArr = [], dens = [];
+    let maxd = 1e-9, maxr = 1e-9, mean = 0, msum = 0;
+    for (let p = 0; p < Npx; p++) {
+      const x = -Xmax + 2 * Xmax * p / (Npx - 1);
+      let re = 0, im = 0;
+      for (let j = 0; j < Nk; j++) { const k = ks[j], ph = k * (x - x0) - 0.5 * k * k * t; re += ws[j] * Math.cos(ph); im += ws[j] * Math.sin(ph); }
+      const d = re * re + im * im;
+      xs.push(x); reArr.push(re); dens.push(d);
+      if (d > maxd) maxd = d; if (Math.abs(re) > maxr) maxr = Math.abs(re);
+      mean += x * d; msum += d;
+    }
+    mean /= msum; let varx = 0; for (let p = 0; p < Npx; p++) varx += dens[p] * (xs[p] - mean) ** 2; varx /= msum;
+    statRef.current.dx = Math.sqrt(varx);
+
+    // ── spectrum |A(k)| ──
+    if (cSpec.current) {
+      const { ctx, w, h } = setup(cSpec.current);
+      ctx.clearRect(0, 0, w, h);
+      grid(ctx, w, h, theme, 3, 8);
+      const padL = 28, padR = 12, padB = 22, padT = 10;
+      const X = (k) => padL + (k / 8) * (w - padL - padR);
+      const Y = (a) => h - padB - a * (h - padB - padT);
+      ctx.strokeStyle = theme.accent2; ctx.lineWidth = 2; ctx.beginPath();
+      for (let j = 0; j < Nk; j++) { const yy = Y(ws[j] / Math.max(...ws)); j === 0 ? ctx.moveTo(X(ks[j]), yy) : ctx.lineTo(X(ks[j]), yy); }
+      ctx.stroke();
+      ctx.fillStyle = theme.accent2 + "22"; ctx.lineTo(X(ks[Nk - 1]), Y(0)); ctx.lineTo(X(ks[0]), Y(0)); ctx.closePath(); ctx.fill();
+      // k0 marker
+      ctx.strokeStyle = theme.warn + "aa"; ctx.setLineDash([3, 3]); ctx.beginPath(); ctx.moveTo(X(k0), padT); ctx.lineTo(X(k0), h - padB); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = theme.textDim; ctx.font = "10px monospace"; ctx.textAlign = "center";
+      ctx.fillText("k", w - padR, h - padB + 16); ctx.fillText("k₀", X(k0), padT + 8);
+      ctx.textAlign = "left"; ctx.fillStyle = theme.text; ctx.font = "bold 11px monospace";
+      ctx.fillText("спектр |A(k)| — набор плоских волн", padL, padT + 2);
+    }
+    // ── ψ(x) ──
+    if (cPsi.current) {
+      const s = setup(cPsi.current);
+      s.ctx.clearRect(0, 0, s.w, s.h);
+      const padL = 12, padR = 12, midY = s.h * 0.52;
+      const X = (x) => padL + (x + Xmax) / (2 * Xmax) * (s.w - padL - padR);
+      s.ctx.strokeStyle = theme.axis + "55"; s.ctx.lineWidth = 1;
+      s.ctx.beginPath(); s.ctx.moveTo(padL, midY); s.ctx.lineTo(s.w - padR, midY); s.ctx.stroke();
+      // |psi|^2 filled
+      const dScale = (s.h * 0.42) / maxd;
+      s.ctx.fillStyle = theme.accent + "33"; s.ctx.strokeStyle = theme.accent; s.ctx.lineWidth = 1.5;
+      s.ctx.beginPath(); s.ctx.moveTo(X(xs[0]), midY);
+      for (let p = 0; p < Npx; p++) s.ctx.lineTo(X(xs[p]), midY - dens[p] * dScale);
+      s.ctx.lineTo(X(xs[Npx - 1]), midY); s.ctx.closePath(); s.ctx.fill();
+      // Re psi
+      const rScale = (s.h * 0.36) / maxr;
+      s.ctx.strokeStyle = theme.warn; s.ctx.lineWidth = 1.5; s.ctx.beginPath();
+      for (let p = 0; p < Npx; p++) { const yy = midY - reArr[p] * rScale; p === 0 ? s.ctx.moveTo(X(xs[p]), yy) : s.ctx.lineTo(X(xs[p]), yy); }
+      s.ctx.stroke();
+      s.ctx.fillStyle = theme.accent; s.ctx.font = "11px monospace"; s.ctx.textAlign = "left"; s.ctx.fillText("|ψ|²", padL + 4, midY - s.h * 0.36);
+      s.ctx.fillStyle = theme.warn; s.ctx.fillText("Re ψ", padL + 44, midY - s.h * 0.36);
+      s.ctx.fillStyle = theme.textDim; s.ctx.textAlign = "center"; s.ctx.fillText("x", s.w - padR, midY + 14);
+    }
+  }, [k0, dk, theme]);
+
+  useEffect(() => {
+    let running = true, lastSync = 0;
+    const loop = () => {
+      if (!running) return;
+      tRef.current += 0.03; draw(tRef.current);
+      lastSync++; if (lastSync % 12 === 0) setStat({ dx: statRef.current.dx });
+      animRef.current = requestAnimationFrame(loop);
+    };
+    loop(); return () => { running = false; cancelAnimationFrame(animRef.current); };
+  }, [draw]);
+
+  const product = stat.dx * dk;
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: theme.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+        Плоская волна Дебройля e<sup>ikx</sup> бесконечна и не локализована. Реальная частица — это <b>волновой пакет</b>:
+        суперпозиция плоских волн с разными k. Чем шире набор Δk, тем у́же пакет в пространстве (Δx·Δk ≳ ½).
+        Пакет движется с групповой скоростью v_g = k₀ и постепенно расплывается (дисперсия).
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 4 }}>
+        <Slider label="Центр k₀ (импульс)" value={k0} min={1} max={6} step={0.1} onChange={setK0} theme={theme} format={v => v.toFixed(1)} />
+        <Slider label="Ширина спектра Δk" value={dk} min={0.15} max={2} step={0.05} onChange={setDk} theme={theme} format={v => v.toFixed(2)} />
+      </div>
+      <StatRow theme={theme} items={[
+        { l: "Δk (импульс)", v: dk.toFixed(2), c: theme.accent2 },
+        { l: "Δx (коорд.)", v: stat.dx.toFixed(2), c: theme.accent },
+        { l: "Δx·Δk", v: product.toFixed(2), c: theme.warn },
+      ]} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div><Label>Спектр по k</Label><canvas ref={cSpec} style={cs(theme, 230)} /></div>
+        <div><Label>Пакет ψ(x, t)</Label><canvas ref={cPsi} style={cs(theme, 230)} /></div>
+      </div>
+      <InfoBox text={
+        dk < 0.3
+          ? `Узкий спектр (Δk=${dk.toFixed(2)}) → пакет широкий и почти как плоская волна: импульс определён хорошо, а положение «размазано». Δx·Δk ≈ ${product.toFixed(2)}.`
+          : dk > 1.2
+          ? `Широкий спектр (Δk=${dk.toFixed(2)}) → пакет узкий и хорошо локализован, но импульс размыт. Такой пакет расплывается быстрее всего. Δx·Δk ≈ ${product.toFixed(2)}.`
+          : `Произведение Δx·Δk ≈ ${product.toFixed(2)} держится около минимума ½ (гауссов пакет). Это и есть соотношение неопределённостей, встроенное в фурье-описание. Пакет едет вправо со скоростью v_g = k₀.`
+      } theme={theme} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 2: POTENTIAL STEP
+// ═══════════════════════════════════════════════════════════════════════
+function StepTab({ theme }) {
+  const [E, setE] = useState(1.6);
+  const cRef = useRef(null);
+  const animRef = useRef(null), tRef = useRef(0);
+  const U = 1;
+  const sol = scatter1D([0, U], [0], E);
+  const over = E > U;
+  const k = Math.sqrt(2 * E), kappa = over ? 0 : Math.sqrt(2 * (U - E));
+  const penDepth = over ? 0 : 1 / kappa;
+
+  const draw = useCallback((t) => {
+    if (!cRef.current) return;
+    const { ctx, w, h } = setup(cRef.current);
+    ctx.clearRect(0, 0, w, h);
+    const Xmax = 8, padL = 12, padR = 12, midY = h * 0.55;
+    const X = (x) => padL + (x + Xmax) / (2 * Xmax) * (w - padL - padR);
+
+    // potential step shading (x>0 region)
+    ctx.fillStyle = theme.accent3 + "12";
+    ctx.fillRect(X(0), 0, X(Xmax) - X(0), h);
+    ctx.strokeStyle = theme.accent3 + "66"; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(X(0), midY - 60); ctx.lineTo(X(0), midY + 60); ctx.stroke();
+    ctx.fillStyle = theme.accent3; ctx.font = "11px monospace"; ctx.textAlign = "left";
+    ctx.fillText("U", X(0) + 6, 16); ctx.fillStyle = theme.textDim; ctx.fillText("E " + (over ? "> U" : "< U"), X(0) + 6, 30);
+
+    // axis
+    ctx.strokeStyle = theme.axis + "55"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, midY); ctx.lineTo(w - padR, midY); ctx.stroke();
+
+    // sample psi
+    const Npx = 300, xs = [], reArr = [], dens = []; let maxAmp = 1e-9;
+    for (let p = 0; p < Npx; p++) {
+      const x = -Xmax + 2 * Xmax * p / (Npx - 1);
+      const ps = sol.psi(x);
+      const re = ps[0] * Math.cos(E * t) + ps[1] * Math.sin(E * t);
+      const d = C.abs2(ps);
+      xs.push(x); reArr.push(re); dens.push(d);
+      if (Math.sqrt(d) > maxAmp) maxAmp = Math.sqrt(d);
+    }
+    const scale = (h * 0.34) / maxAmp;
+    // |psi|^2
+    ctx.strokeStyle = theme.accent + "99"; ctx.lineWidth = 1; ctx.beginPath();
+    for (let p = 0; p < Npx; p++) { const yy = midY - dens[p] * scale * 0.6; p === 0 ? ctx.moveTo(X(xs[p]), yy) : ctx.lineTo(X(xs[p]), yy); }
+    ctx.stroke();
+    // Re psi animated
+    ctx.strokeStyle = theme.warn; ctx.lineWidth = 2; ctx.beginPath();
+    for (let p = 0; p < Npx; p++) { const yy = midY - reArr[p] * scale; p === 0 ? ctx.moveTo(X(xs[p]), yy) : ctx.lineTo(X(xs[p]), yy); }
+    ctx.stroke();
+
+    ctx.fillStyle = theme.warn; ctx.font = "11px monospace"; ctx.textAlign = "left"; ctx.fillText("Re ψ(x,t)", padL + 4, h - 10);
+    ctx.fillStyle = theme.accent; ctx.fillText("|ψ|²", padL + 90, h - 10);
+    ctx.fillStyle = theme.textDim; ctx.textAlign = "left"; ctx.fillText("← налетающая + отражённая", X(-Xmax) + 4, midY + 70);
+    ctx.textAlign = "right"; ctx.fillText(over ? "прошедшая →" : "затухающая (экспонента)", X(Xmax) - 4, midY + 70);
+  }, [E, theme, sol]);
+
+  useEffect(() => {
+    let running = true;
+    const loop = () => { if (!running) return; tRef.current += 0.04; draw(tRef.current); animRef.current = requestAnimationFrame(loop); };
+    loop(); return () => { running = false; cancelAnimationFrame(animRef.current); };
+  }, [draw]);
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: theme.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+        Частица налетает слева на скачок потенциала высотой U. Классически при E&gt;U она бы прошла без отражения,
+        при E&lt;U — отразилась бы полностью. В квантовом мире и то, и другое не так: над ступенькой есть
+        частичное <b>отражение</b>, под ступенькой волна <b>проникает</b> вглубь, затухая по экспоненте.
+        Коэффициенты считаются через поток вероятности (R + T = 1), а не просто |ψ|².
+      </p>
+      <Slider label="Энергия E (в единицах U)" value={E} min={0.2} max={3} step={0.02} onChange={setE} theme={theme} format={v => v.toFixed(2)} />
+      <StatRow theme={theme} items={[
+        { l: "режим", v: over ? "E > U" : "E < U", c: over ? theme.accent4 : theme.accent3 },
+        { l: "R отраж.", v: (sol.R * 100).toFixed(0) + "%", c: theme.accent3 },
+        { l: "T прошло", v: (sol.T * 100).toFixed(0) + "%", c: theme.accent4 },
+        { l: "R+T", v: (sol.R + sol.T).toFixed(2), c: theme.warn },
+      ]} />
+      <canvas ref={cRef} style={cs(theme, 260)} />
+      <InfoBox text={
+        over
+          ? `E > U: классика дала бы R=0, но квант даёт R = ${(sol.R * 100).toFixed(0)}% — частица отражается даже «перелетая» ступеньку (как свет частично отражается на границе сред). Прошедшая волна имеет меньший k′ = √(2(E−U)).`
+          : `E < U: полное отражение, R = 100%. Но ψ не обрывается на стенке — она экспоненциально проникает вглубь на глубину ~1/κ = ${penDepth.toFixed(2)} (затухающая волна). Это прямой аналог полного внутреннего отражения и затухающего поля в оптике; именно это проникновение делает возможным туннелирование.`
+      } theme={theme} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 3: BARRIER TUNNELING (E < U0)
+// ═══════════════════════════════════════════════════════════════════════
+function BarrierTab({ theme }) {
+  const [L, setL] = useState(2);
+  const [U0, setU0] = useState(1.5);
+  const [frac, setFrac] = useState(0.4); // E / U0
+  const cPsi = useRef(null), cD = useRef(null);
+  const animRef = useRef(null), tRef = useRef(0);
+  const E = frac * U0;
+  const sol = scatter1D([0, U0, 0], [0, L], E);
+  const D = sol.T;
+  const kappa = Math.sqrt(2 * (U0 - E));
+
+  const draw = useCallback((t) => {
+    const xmin = -3, xmax = L + 3;
+    // ── ψ(x) ──
+    if (cPsi.current) {
+      const { ctx, w, h } = setup(cPsi.current);
+      ctx.clearRect(0, 0, w, h);
+      const padL = 12, padR = 12, midY = h * 0.58;
+      const X = (x) => padL + (x - xmin) / (xmax - xmin) * (w - padL - padR);
+      // barrier shading
+      ctx.fillStyle = theme.accent3 + "14"; ctx.fillRect(X(0), 0, X(L) - X(0), h);
+      ctx.strokeStyle = theme.accent3 + "55"; ctx.lineWidth = 1;
+      ctx.strokeRect(X(0), midY - 70, X(L) - X(0), 70);
+      ctx.fillStyle = theme.accent3; ctx.font = "10px monospace"; ctx.textAlign = "center";
+      ctx.fillText("U₀", (X(0) + X(L)) / 2, midY - 74);
+      ctx.strokeStyle = theme.axis + "55"; ctx.beginPath(); ctx.moveTo(padL, midY); ctx.lineTo(w - padR, midY); ctx.stroke();
+
+      const Npx = 320, xs = [], reArr = [], dens = []; let maxAmp = 1e-9;
+      for (let p = 0; p < Npx; p++) {
+        const x = xmin + (xmax - xmin) * p / (Npx - 1);
+        const ps = sol.psi(x);
+        xs.push(x); reArr.push(ps[0] * Math.cos(E * t) + ps[1] * Math.sin(E * t)); dens.push(C.abs2(ps));
+        if (C.abs(ps) > maxAmp) maxAmp = C.abs(ps);
+      }
+      const scale = (h * 0.32) / maxAmp;
+      ctx.strokeStyle = theme.accent + "88"; ctx.lineWidth = 1; ctx.beginPath();
+      for (let p = 0; p < Npx; p++) { const yy = midY - dens[p] * scale * 0.55; p === 0 ? ctx.moveTo(X(xs[p]), yy) : ctx.lineTo(X(xs[p]), yy); }
+      ctx.stroke();
+      ctx.strokeStyle = theme.warn; ctx.lineWidth = 2; ctx.beginPath();
+      for (let p = 0; p < Npx; p++) { const yy = midY - reArr[p] * scale; p === 0 ? ctx.moveTo(X(xs[p]), yy) : ctx.lineTo(X(xs[p]), yy); }
+      ctx.stroke();
+      ctx.fillStyle = theme.textDim; ctx.font = "10px monospace"; ctx.textAlign = "left";
+      ctx.fillText("налет.+отраж.", X(xmin) + 2, midY + 64);
+      ctx.fillText("затухание", X(0) + 4, midY + 64);
+      ctx.textAlign = "right"; ctx.fillText("прошедшая (мала)", X(xmax) - 2, midY + 64);
+    }
+    // ── D vs width L ──
+    if (cD.current) {
+      const s = setup(cD.current);
+      s.ctx.clearRect(0, 0, s.w, s.h);
+      grid(s.ctx, s.w, s.h, theme, 4, 8);
+      const padL = 34, padR = 12, padT = 14, padB = 22;
+      const Lmax = 6, logMin = -8; // log10 D axis
+      const X = (l) => padL + (l / Lmax) * (s.w - padL - padR);
+      const Y = (logD) => padT + (s.h - padT - padB) * (1 - (Math.max(logMin, logD) - logMin) / (0 - logMin));
+      s.ctx.strokeStyle = theme.accent; s.ctx.lineWidth = 2; s.ctx.beginPath();
+      for (let l = 0.05; l <= Lmax; l += 0.05) {
+        const d = scatter1D([0, U0, 0], [0, l], E).T;
+        const yy = Y(Math.log10(Math.max(1e-12, d)));
+        l <= 0.06 ? s.ctx.moveTo(X(l), yy) : s.ctx.lineTo(X(l), yy);
+      }
+      s.ctx.stroke();
+      s.ctx.fillStyle = theme.warn; s.ctx.shadowColor = theme.warn; s.ctx.shadowBlur = 8;
+      s.ctx.beginPath(); s.ctx.arc(X(L), Y(Math.log10(Math.max(1e-12, D))), 5, 0, Math.PI * 2); s.ctx.fill(); s.ctx.shadowBlur = 0;
+      s.ctx.fillStyle = theme.text; s.ctx.font = "bold 11px monospace"; s.ctx.textAlign = "left";
+      s.ctx.fillText("D(ширина L) — логарифм", padL, 11);
+      s.ctx.fillStyle = theme.textDim; s.ctx.font = "9px monospace"; s.ctx.textAlign = "center";
+      s.ctx.fillText("L", s.w - padR, s.h - padB + 16);
+      s.ctx.textAlign = "right"; s.ctx.fillText("10⁰", padL - 4, Y(0) + 3); s.ctx.fillText("10⁻⁸", padL - 4, Y(logMin) + 3);
+    }
+  }, [L, U0, frac, E, D, theme, sol]);
+
+  useEffect(() => {
+    let running = true;
+    const loop = () => { if (!running) return; tRef.current += 0.04; draw(tRef.current); animRef.current = requestAnimationFrame(loop); };
+    loop(); return () => { running = false; cancelAnimationFrame(animRef.current); };
+  }, [draw]);
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: theme.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+        Прямоугольный барьер («забор») высотой U₀ и шириной L. Энергия частицы E &lt; U₀ — классически она бы
+        отскочила. Но ψ проникает внутрь (затухающая экспонента) и, если барьер не слишком широк, не успевает
+        обнулиться — часть волны выходит наружу. Это <b>туннелирование</b>: коэффициент прохождения D &gt; 0.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 4 }}>
+        <Slider label="Ширина L" value={L} min={0.3} max={5} step={0.05} onChange={setL} theme={theme} format={v => v.toFixed(2)} />
+        <Slider label="Высота U₀" value={U0} min={0.5} max={3} step={0.05} onChange={setU0} theme={theme} format={v => v.toFixed(2)} />
+        <Slider label="E / U₀" value={frac} min={0.05} max={0.95} step={0.01} onChange={setFrac} theme={theme} format={v => v.toFixed(2)} />
+      </div>
+      <StatRow theme={theme} items={[
+        { l: "E", v: E.toFixed(2), c: theme.warn },
+        { l: "κ (затух.)", v: kappa.toFixed(2), c: theme.accent3 },
+        { l: "D прохожд.", v: D < 0.001 ? D.toExponential(1) : (D * 100).toFixed(2) + "%", c: theme.accent },
+        { l: "R отраж.", v: (sol.R * 100).toFixed(1) + "%", c: theme.accent3 },
+      ]} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div><Label>Волновая функция</Label><canvas ref={cPsi} style={cs(theme, 230)} /></div>
+        <div><Label>Зависимость D от ширины</Label><canvas ref={cD} style={cs(theme, 230)} /></div>
+      </div>
+      <InfoBox text={
+        D > 0.2
+          ? `Тонкий/низкий барьер: D = ${(D * 100).toFixed(1)}%. ψ внутри почти линейна (sh κL ≈ κL), волна легко проходит.`
+          : `D = ${D < 0.001 ? D.toExponential(2) : (D * 100).toFixed(2) + "%"}. Для широкого/высокого барьера D ∝ e^(−2κL) — падает экспоненциально с шириной (см. правый график — почти прямая в логарифме). Поэтому туннелирование чудовищно чувствительно к ширине барьера: именно на этом работает СТМ.`
+      } theme={theme} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 4: RESONANT TRANSMISSION OVER BARRIER / RAMSAUER
+// ═══════════════════════════════════════════════════════════════════════
+function ResonanceTab({ theme }) {
+  const [mode, setMode] = useState("barrier"); // barrier | well
+  const [L, setL] = useState(3);
+  const [Umag, setUmag] = useState(1);
+  const [E, setE] = useState(1.5);
+  const cPsi = useRef(null), cD = useRef(null);
+  const animRef = useRef(null), tRef = useRef(0);
+  const U0 = mode === "barrier" ? Umag : -Umag;
+  const sol = scatter1D([0, U0, 0], [0, L], E);
+  const D = sol.T;
+  // resonance energies: k'L = nπ -> E_n = U0 + (nπ/L)^2/2
+  const resE = [];
+  for (let nn = 1; nn < 30; nn++) { const e = U0 + (nn * Math.PI / L) ** 2 / 2; if (e > 0.02 && e < 5) resE.push(e); }
+
+  const draw = useCallback((t) => {
+    const xmin = -3, xmax = L + 3;
+    if (cPsi.current) {
+      const { ctx, w, h } = setup(cPsi.current);
+      ctx.clearRect(0, 0, w, h);
+      const padL = 12, padR = 12, midY = h * 0.55;
+      const X = (x) => padL + (x - xmin) / (xmax - xmin) * (w - padL - padR);
+      const col = mode === "barrier" ? theme.accent3 : theme.accent4;
+      ctx.fillStyle = col + "14"; ctx.fillRect(X(0), mode === "barrier" ? 0 : midY, X(L) - X(0), mode === "barrier" ? h : h - midY);
+      ctx.strokeStyle = col + "66"; ctx.lineWidth = 1;
+      const bh = 46; ctx.strokeRect(X(0), mode === "barrier" ? midY - bh : midY, X(L) - X(0), bh);
+      ctx.fillStyle = col; ctx.font = "10px monospace"; ctx.textAlign = "center";
+      ctx.fillText(mode === "barrier" ? "U₀>0" : "U₀<0 (яма)", (X(0) + X(L)) / 2, mode === "barrier" ? midY - bh - 4 : midY + bh + 12);
+      ctx.strokeStyle = theme.axis + "55"; ctx.beginPath(); ctx.moveTo(padL, midY); ctx.lineTo(w - padR, midY); ctx.stroke();
+
+      const Npx = 320, reArr = [], dens = []; let maxAmp = 1e-9;
+      for (let p = 0; p < Npx; p++) { const x = xmin + (xmax - xmin) * p / (Npx - 1); const ps = sol.psi(x); reArr.push([x, ps[0] * Math.cos(E * t) + ps[1] * Math.sin(E * t)]); dens.push([x, C.abs2(ps)]); if (C.abs(ps) > maxAmp) maxAmp = C.abs(ps); }
+      const scale = (h * 0.3) / maxAmp;
+      ctx.strokeStyle = theme.accent + "88"; ctx.lineWidth = 1; ctx.beginPath();
+      dens.forEach((d, p) => { const yy = midY - d[1] * scale * 0.55; p === 0 ? ctx.moveTo(X(d[0]), yy) : ctx.lineTo(X(d[0]), yy); }); ctx.stroke();
+      ctx.strokeStyle = theme.warn; ctx.lineWidth = 2; ctx.beginPath();
+      reArr.forEach((d, p) => { const yy = midY - d[1] * scale; p === 0 ? ctx.moveTo(X(d[0]), yy) : ctx.lineTo(X(d[0]), yy); }); ctx.stroke();
+    }
+    if (cD.current) {
+      const s = setup(cD.current);
+      s.ctx.clearRect(0, 0, s.w, s.h);
+      grid(s.ctx, s.w, s.h, theme, 4, 8);
+      const padL = 30, padR = 12, padT = 14, padB = 22, Emax = 5;
+      const X = (e) => padL + (e / Emax) * (s.w - padL - padR);
+      const Y = (d) => padT + (s.h - padT - padB) * (1 - d);
+      // resonance verticals
+      resE.forEach(e => { s.ctx.strokeStyle = theme.accent4 + "55"; s.ctx.setLineDash([2, 3]); s.ctx.beginPath(); s.ctx.moveTo(X(e), padT); s.ctx.lineTo(X(e), s.h - padB); s.ctx.stroke(); s.ctx.setLineDash([]); });
+      s.ctx.strokeStyle = theme.accent2; s.ctx.lineWidth = 2; s.ctx.beginPath();
+      for (let e = 0.02; e <= Emax; e += 0.02) { const d = scatter1D([0, U0, 0], [0, L], e).T; const yy = Y(d); e <= 0.04 ? s.ctx.moveTo(X(e), yy) : s.ctx.lineTo(X(e), yy); }
+      s.ctx.stroke();
+      // U0 marker for barrier
+      if (mode === "barrier") { s.ctx.strokeStyle = theme.accent3 + "88"; s.ctx.setLineDash([4, 3]); s.ctx.beginPath(); s.ctx.moveTo(X(Umag), padT); s.ctx.lineTo(X(Umag), s.h - padB); s.ctx.stroke(); s.ctx.setLineDash([]); s.ctx.fillStyle = theme.accent3; s.ctx.font = "9px monospace"; s.ctx.textAlign = "center"; s.ctx.fillText("U₀", X(Umag), s.h - padB + 16); }
+      s.ctx.fillStyle = theme.warn; s.ctx.shadowColor = theme.warn; s.ctx.shadowBlur = 8;
+      s.ctx.beginPath(); s.ctx.arc(X(E), Y(D), 5, 0, Math.PI * 2); s.ctx.fill(); s.ctx.shadowBlur = 0;
+      s.ctx.fillStyle = theme.text; s.ctx.font = "bold 11px monospace"; s.ctx.textAlign = "left"; s.ctx.fillText("D(E) — прохождение", padL, 11);
+      s.ctx.fillStyle = theme.textDim; s.ctx.font = "9px monospace"; s.ctx.textAlign = "center"; s.ctx.fillText("E", s.w - padR, s.h - padB + 16);
+      s.ctx.textAlign = "right"; s.ctx.fillText("1", padL - 4, Y(1) + 3); s.ctx.fillText("0", padL - 4, Y(0) + 3);
+    }
+  }, [mode, L, Umag, E, U0, D, theme, sol]);
+
+  useEffect(() => {
+    let running = true;
+    const loop = () => { if (!running) return; tRef.current += 0.04; draw(tRef.current); animRef.current = requestAnimationFrame(loop); };
+    loop(); return () => { running = false; cancelAnimationFrame(animRef.current); };
+  }, [draw]);
+
+  const nearRes = resE.reduce((best, e) => Math.abs(e - E) < Math.abs(best - E) ? e : best, resE[0] || 0);
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: theme.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+        Если энергия выше барьера (или над ямой), прохождение всё равно зависит от энергии: волны, отражённые
+        от двух стенок, интерферируют. При определённых E (когда на ширине укладывается целое число полуволн)
+        отражение исчезает и D = 1 — <b>резонансное прохождение</b>. На яме это эффект <b>Рамзауэра</b>;
+        оптический аналог — просветление оптики.
+      </p>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        {[["barrier", "Барьер U₀>0"], ["well", "Яма U₀<0 (Рамзауэр)"]].map(([id, lbl]) => (
+          <button key={id} onClick={() => setMode(id)} style={{
+            padding: "7px 16px", borderRadius: 6, fontSize: 13, fontWeight: 600, cursor: "pointer",
+            border: `1px solid ${mode === id ? theme.accent : theme.panelBorder}`,
+            background: mode === id ? theme.accent + "22" : theme.btnBg, color: mode === id ? theme.accent : theme.text
+          }}>{lbl}</button>
+        ))}
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 4 }}>
+        <Slider label="Ширина L" value={L} min={1} max={5} step={0.05} onChange={setL} theme={theme} format={v => v.toFixed(2)} />
+        <Slider label="Глубина/высота |U₀|" value={Umag} min={0.3} max={2.5} step={0.05} onChange={setUmag} theme={theme} format={v => v.toFixed(2)} />
+        <Slider label="Энергия E" value={E} min={0.1} max={5} step={0.02} onChange={setE} theme={theme} format={v => v.toFixed(2)} />
+      </div>
+      <StatRow theme={theme} items={[
+        { l: "D прохожд.", v: (D * 100).toFixed(1) + "%", c: theme.accent },
+        { l: "R отраж.", v: (sol.R * 100).toFixed(1) + "%", c: theme.accent3 },
+        { l: "ближ. резонанс E", v: nearRes ? nearRes.toFixed(2) : "—", c: theme.accent4 },
+      ]} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div><Label>Волновая функция</Label><canvas ref={cPsi} style={cs(theme, 230)} /></div>
+        <div><Label>Прохождение vs энергия</Label><canvas ref={cD} style={cs(theme, 230)} /></div>
+      </div>
+      <InfoBox text={
+        D > 0.985
+          ? `Резонанс: D ≈ 100%. На ширине L уложилось целое число полуволн (k′L = nπ), отражения от стенок погасили друг друга. ${mode === "well" ? "В эффекте Рамзауэра именно здесь ток электронов через аргон максимален." : "Барьер стал «прозрачным»."}`
+          : `D = ${(D * 100).toFixed(0)}%, R = ${(sol.R * 100).toFixed(0)}%. Между резонансами часть волны отражается. Двигайте E к отмеченным пунктиром резонансам — там D→1. ${mode === "well" ? "Минимумы D ↔ максимумы отражения = провалы тока (эффект Рамзауэра)." : ""}`
+      } theme={theme} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 5: TWO-PRISM FRUSTRATED TOTAL INTERNAL REFLECTION
+// ═══════════════════════════════════════════════════════════════════════
+function PrismsTab({ theme }) {
+  const [gap, setGap] = useState(250);   // nm
+  const [angle, setAngle] = useState(45); // deg
+  const cRef = useRef(null), cT = useRef(null);
+  const animRef = useRef(null), tRef = useRef(0);
+  const n = 1.5, lam = 650;
+  const thetaC = Math.asin(1 / n) * 180 / Math.PI;
+  const tir = angle > thetaC;
+  const arg = n * n * Math.sin(angle * Math.PI / 180) ** 2 - 1;
+  const kappa = tir ? (2 * Math.PI / lam) * Math.sqrt(arg) : 0; // 1/nm
+  const T = tir ? Math.exp(-2 * kappa * gap) : 1;
+  const R = 1 - T;
+
+  const draw = useCallback((t) => {
+    if (cRef.current) {
+      const { ctx, w, h } = setup(cRef.current);
+      ctx.clearRect(0, 0, w, h);
+      // Cube split by "/" diagonal: prism 1 = upper-left triangle, prism 2 = lower-right.
+      // Beam enters horizontally from the left, TIR at the diagonal sends it UP to the wall;
+      // tunnelled beam continues straight to the right.
+      const sz = Math.min(w * 0.46, h * 0.6);
+      const cubeCx = w * 0.46, cubeCy = h * 0.6;
+      const x0 = cubeCx - sz / 2, x1 = cubeCx + sz / 2, y0 = cubeCy - sz / 2, y1 = cubeCy + sz / 2;
+      const off = (3 + gap / 1000 * 24) / Math.SQRT2;     // gap shift of prism 2 along normal
+      const hx = cubeCx, hy = cubeCy;                      // TIR point = centre of diagonal
+
+      // wall / screen at the top
+      const wallY = 16;
+      ctx.fillStyle = theme.panelBorder; ctx.fillRect(0, wallY - 7, w, 7);
+      ctx.fillStyle = theme.textDim; ctx.font = "9px monospace"; ctx.textAlign = "left"; ctx.fillText("экран (стена)", 6, wallY + 16);
+
+      const fillP = theme.accent + "1e";
+      ctx.fillStyle = fillP; ctx.strokeStyle = theme.accent; ctx.lineWidth = 2;
+      // prism 1: TL, TR, BL
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y0); ctx.lineTo(x0, y1); ctx.closePath(); ctx.fill(); ctx.stroke();
+      // prism 2: TR, BR, BL  (shifted down-right by the gap)
+      ctx.beginPath(); ctx.moveTo(x1 + off, y0 + off); ctx.lineTo(x1 + off, y1 + off); ctx.lineTo(x0 + off, y1 + off); ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.fillStyle = theme.textDim; ctx.font = "10px monospace"; ctx.textAlign = "center";
+      ctx.fillText("призма 1", x0 + sz * 0.3, y0 + sz * 0.32);
+      ctx.fillText("призма 2", x1 + off - sz * 0.24, y1 + off - sz * 0.22);
+      ctx.fillStyle = theme.warn; ctx.fillText("зазор d", hx + off * 0.5 + 34, hy + off * 0.5);
+
+      // evanescent field decaying across the gap (along the down-right normal)
+      ctx.strokeStyle = theme.warn + "cc"; ctx.lineWidth = 1.5; ctx.beginPath();
+      const nx = 1 / Math.SQRT2, ny = 1 / Math.SQRT2, tx = nx, ty = -ny; // normal & tangent
+      const gpx = Math.max(off, 2);
+      for (let i = 0; i <= 28; i++) {
+        const f = i / 28; const env = Math.exp(-2 * kappa * gap * f);
+        const bx = hx + f * gpx, by = hy + f * gpx;     // along normal
+        const a = 14 * env * Math.cos(t * 4 - f * 7);
+        const px = bx + tx * a, py = by + ty * a;
+        i === 0 ? ctx.moveTo(px, py) : ctx.lineTo(px, py);
+      }
+      ctx.stroke();
+
+      const beam = (xa, ya, xb, yb, intensity, phase) => {
+        const al = Math.round(40 + Math.max(0, Math.min(1, intensity)) * 150).toString(16).padStart(2, "0");
+        ctx.strokeStyle = theme.accent3 + al; ctx.lineWidth = 1.5 + intensity * 2.2;
+        ctx.beginPath(); ctx.moveTo(xa, ya); ctx.lineTo(xb, yb); ctx.stroke();
+        const np = 4; for (let j = 0; j < np; j++) { const f = ((t * 0.4 + phase + j / np) % 1); const px = xa + (xb - xa) * f, py = ya + (yb - ya) * f; ctx.fillStyle = theme.accent3; ctx.globalAlpha = Math.max(0.18, intensity); ctx.beginPath(); ctx.arc(px, py, 2.3 + intensity * 2, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1; }
+      };
+      // incident: from left into prism-1 left face, horizontal to the TIR point
+      beam(x0 - sz * 0.5, hy, hx, hy, 1, 0);
+      // reflected (TIR): straight up to the wall
+      beam(hx, hy, hx, wallY, R, 0.3);
+      // transmitted (tunnelled): across gap into prism 2, straight on to the right
+      beam(hx + off, hy + off, x1 + off + sz * 0.5, hy + off, T, 0.1);
+
+      // red laser spot on the wall (∝ R)
+      ctx.fillStyle = theme.trace2; ctx.globalAlpha = Math.max(0.12, R); ctx.shadowColor = theme.trace2; ctx.shadowBlur = 10;
+      ctx.beginPath(); ctx.arc(hx, wallY, 3.5 + 3.5 * R, 0, Math.PI * 2); ctx.fill(); ctx.shadowBlur = 0; ctx.globalAlpha = 1;
+      // transmitted spot (∝ T)
+      ctx.fillStyle = theme.accent3; ctx.globalAlpha = Math.max(0.1, T); ctx.beginPath(); ctx.arc(x1 + off + sz * 0.5, hy + off, 2.5 + 3.5 * T, 0, Math.PI * 2); ctx.fill(); ctx.globalAlpha = 1;
+
+      ctx.fillStyle = theme.textDim; ctx.font = "10px monospace"; ctx.textAlign = "right"; ctx.fillText("лазер →", x0 - sz * 0.5 + 44, hy - 6);
+      ctx.fillStyle = theme.trace2; ctx.textAlign = "left"; ctx.fillText("ПВО ↑ " + (R * 100).toFixed(0) + "%", hx + 6, (hy + wallY) / 2);
+      ctx.fillStyle = T > 0.02 ? theme.accent3 : theme.textDim; ctx.textAlign = "left"; ctx.fillText("прошло " + (T * 100).toFixed(T > 0.1 ? 0 : 1) + "%", x1 + off - sz * 0.1, hy + off - 8);
+    }
+    if (cT.current) {
+      const s = setup(cT.current);
+      s.ctx.clearRect(0, 0, s.w, s.h);
+      grid(s.ctx, s.w, s.h, theme, 4, 8);
+      const padL = 30, padR = 12, padT = 14, padB = 22, dMax = 1000;
+      const X = (d) => padL + (d / dMax) * (s.w - padL - padR);
+      const Y = (tr) => padT + (s.h - padT - padB) * (1 - tr);
+      s.ctx.strokeStyle = theme.accent2; s.ctx.lineWidth = 2; s.ctx.beginPath();
+      for (let d = 0; d <= dMax; d += 8) { const tr = tir ? Math.exp(-2 * kappa * d) : 1; const yy = Y(tr); d === 0 ? s.ctx.moveTo(X(d), yy) : s.ctx.lineTo(X(d), yy); }
+      s.ctx.stroke();
+      s.ctx.fillStyle = theme.warn; s.ctx.shadowColor = theme.warn; s.ctx.shadowBlur = 8;
+      s.ctx.beginPath(); s.ctx.arc(X(gap), Y(T), 5, 0, Math.PI * 2); s.ctx.fill(); s.ctx.shadowBlur = 0;
+      s.ctx.fillStyle = theme.text; s.ctx.font = "bold 11px monospace"; s.ctx.textAlign = "left"; s.ctx.fillText("прошедшая интенсивность T(d)", padL, 11);
+      s.ctx.fillStyle = theme.textDim; s.ctx.font = "9px monospace"; s.ctx.textAlign = "center"; s.ctx.fillText("зазор d, нм", padL + (s.w - padL - padR) / 2, s.h - 6);
+    }
+  }, [gap, angle, kappa, tir, T, R, theme]);
+
+  useEffect(() => {
+    let running = true;
+    const loop = () => { if (!running) return; tRef.current += 0.02; draw(tRef.current); animRef.current = requestAnimationFrame(loop); };
+    loop(); return () => { running = false; cancelAnimationFrame(animRef.current); };
+  }, [draw]);
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: theme.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+        Оптический аналог туннелирования — тот самый опыт с двумя призмами и лазером. Свет испытывает
+        полное внутреннее отражение на грани первой призмы, но затухающее (эванесцентное) поле проникает в зазор.
+        Если вторую призму поднести достаточно близко, часть света «протуннелирует» через воздушный промежуток
+        и выйдет наружу — на экране появляется пятно. Интенсивность T ∝ e<sup>−2κd</sup>, как и для барьера.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 4 }}>
+        <Slider label="Зазор d" value={gap} min={0} max={1000} step={10} onChange={setGap} theme={theme} unit=" нм" />
+        <Slider label="Угол падения θ" value={angle} min={42} max={70} step={0.5} onChange={setAngle} theme={theme} unit="°" />
+      </div>
+      <StatRow theme={theme} items={[
+        { l: "крит. угол", v: thetaC.toFixed(1) + "°", c: theme.textDim },
+        { l: "T прошло", v: (T * 100).toFixed(T > 0.1 ? 0 : 1) + "%", c: theme.accent3 },
+        { l: "R отраж.", v: (R * 100).toFixed(0) + "%", c: theme.accent },
+        { l: "1/κ глубина", v: tir ? (1 / kappa).toFixed(0) + " нм" : "—", c: theme.warn },
+      ]} />
+      <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: 12 }}>
+        <div><Label>Две призмы и зазор</Label><canvas ref={cRef} style={cs(theme, 250)} /></div>
+        <div><Label>Прошедшая интенсивность</Label><canvas ref={cT} style={cs(theme, 250)} /></div>
+      </div>
+      <InfoBox text={
+        !tir
+          ? `Угол ${angle}° меньше критического (${thetaC.toFixed(1)}°): полного внутреннего отражения нет, свет просто проходит. Увеличьте угол выше критического, чтобы получить эванесцентное поле и эффект.`
+          : gap < 120
+          ? `Зазор ${gap} нм мал (меньше ~1/κ = ${(1 / kappa).toFixed(0)} нм): эванесцентная волна не успевает затухнуть, T = ${(T * 100).toFixed(0)}%. Пятно на экране яркое.`
+          : `Зазор ${gap} нм: T = ${(T * 100).toFixed(1)}%, экспоненциально мало. Это ровно та же формула, что и для квантового барьера — только вместо частицы свет, а вместо κ из (U₀−E) — κ из (n²sin²θ − 1).`
+      } theme={theme} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 6: ALPHA DECAY (Gamow tunneling, Geiger–Nuttall)
+// ═══════════════════════════════════════════════════════════════════════
+function AlphaTab({ theme }) {
+  const [Ea, setEa] = useState(5);   // MeV
+  const [Zd, setZd] = useState(86);  // daughter charge
+  const cV = useRef(null), cGN = useRef(null);
+  const hbarc = 197.3, mac2 = 3727, kc = 1.44; // MeV·fm, MeV, MeV·fm
+  const Rnuc = 1.4 * Math.pow(4 + 2.5 * Zd, 1 / 3) + 1.2; // rough fm
+
+  // Gamow factor G = ∫_R^{rc} kappa dr  (kappa in 1/fm)
+  const gamow = (E, Z) => {
+    const kC = 2 * Z * kc;            // Z1=2 (alpha)
+    const rc = kC / E;                 // outer turning point (fm)
+    if (rc <= Rnuc) return 0;
+    const N = 400; let G = 0;
+    for (let i = 0; i < N; i++) {
+      const r = Rnuc + (rc - Rnuc) * (i + 0.5) / N;
+      const V = kC / r;
+      const kap = Math.sqrt(Math.max(0, 2 * mac2 * (V - E))) / hbarc;
+      G += kap * (rc - Rnuc) / N;
+    }
+    return G;
+  };
+  const halfLife = (E, Z) => {
+    const G = gamow(E, Z);
+    const v = 3e23 * Math.sqrt(2 * E / mac2); // fm/s
+    const f = v / (2 * Rnuc);                  // assault frequency 1/s
+    const P = Math.exp(-2 * G);
+    return Math.LN2 / (f * P);                  // seconds
+  };
+  const Vpeak = 2 * Zd * kc / Rnuc;
+  const T12 = halfLife(Ea, Zd);
+  const logT = Math.log10(T12);
+
+  const fmtTime = (s) => {
+    if (!isFinite(s)) return "∞";
+    const yr = 3.156e7;
+    if (s < 1e-9) return (s * 1e12).toFixed(1) + " пс";
+    if (s < 1e-6) return (s * 1e9).toFixed(1) + " нс";
+    if (s < 1e-3) return (s * 1e6).toFixed(1) + " мкс";
+    if (s < 1) return (s * 1e3).toFixed(1) + " мс";
+    if (s < 60) return s.toFixed(1) + " с";
+    if (s < 3600) return (s / 60).toFixed(1) + " мин";
+    if (s < 86400) return (s / 3600).toFixed(1) + " ч";
+    if (s < yr) return (s / 86400).toFixed(1) + " дн";
+    if (s < 1e3 * yr) return (s / yr).toFixed(1) + " лет";
+    if (s < 1e6 * yr) return (s / (1e3 * yr)).toFixed(1) + " тыс. лет";
+    if (s < 1e9 * yr) return (s / (1e6 * yr)).toFixed(1) + " млн лет";
+    return (s / (1e9 * yr)).toFixed(1) + " млрд лет";
+  };
+
+  useEffect(() => {
+    // V(r) diagram
+    if (cV.current) {
+      const { ctx, w, h } = setup(cV.current);
+      ctx.clearRect(0, 0, w, h);
+      const padL = 30, padR = 14, padT = 14, padB = 24;
+      const rMax = 60, vMax = Math.max(30, Vpeak * 1.1), vMin = -25;
+      const X = (r) => padL + (r / rMax) * (w - padL - padR);
+      const Y = (v) => padT + (h - padT - padB) * (1 - (v - vMin) / (vMax - vMin));
+      grid(ctx, w, h, theme, 4, 8);
+      // potential: well (-V0) for r<R, Coulomb kC/r for r>R
+      const kC = 2 * Zd * kc, V0 = 20;
+      ctx.strokeStyle = theme.accent2; ctx.lineWidth = 2; ctx.beginPath();
+      ctx.moveTo(X(0.5), Y(-V0)); ctx.lineTo(X(Rnuc), Y(-V0)); ctx.lineTo(X(Rnuc), Y(kC / Rnuc));
+      for (let r = Rnuc; r <= rMax; r += 0.4) ctx.lineTo(X(r), Y(kC / r));
+      ctx.stroke();
+      // energy level
+      ctx.strokeStyle = theme.warn; ctx.lineWidth = 1.5; ctx.setLineDash([4, 3]);
+      ctx.beginPath(); ctx.moveTo(X(0.5), Y(Ea)); ctx.lineTo(X(rMax), Y(Ea)); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = theme.warn; ctx.font = "10px monospace"; ctx.textAlign = "left"; ctx.fillText("Eα = " + Ea.toFixed(1) + " МэВ", X(rMax) - 90, Y(Ea) - 4);
+      // tunneling region shading (R to rc)
+      const rc = kC / Ea;
+      ctx.fillStyle = theme.accent3 + "22";
+      ctx.fillRect(X(Rnuc), padT, X(Math.min(rMax, rc)) - X(Rnuc), h - padT - padB);
+      ctx.fillStyle = theme.accent3; ctx.font = "9px monospace"; ctx.textAlign = "center";
+      if (rc < rMax) ctx.fillText("туннель", (X(Rnuc) + X(Math.min(rMax, rc))) / 2, padT + 10);
+      ctx.fillStyle = theme.textDim; ctx.textAlign = "center"; ctx.fillText("r, фм", padL + (w - padL - padR) / 2, h - 6);
+      ctx.textAlign = "left"; ctx.fillText("V(r)", padL + 2, padT + 2);
+      ctx.fillStyle = theme.accent2; ctx.fillText("яма (ядро)", X(0.6), Y(-V0) + 12);
+    }
+    // Geiger–Nuttall: log10 T1/2 vs 1/sqrt(Ea)
+    if (cGN.current) {
+      const s = setup(cGN.current);
+      s.ctx.clearRect(0, 0, s.w, s.h);
+      grid(s.ctx, s.w, s.h, theme, 4, 8);
+      const padL = 34, padR = 12, padT = 14, padB = 24;
+      const xMin = 1 / Math.sqrt(9), xMax = 1 / Math.sqrt(3.5); // 1/sqrt(E), E in [3.5,9]
+      const yMin = -8, yMax = 26;
+      const X = (xx) => padL + (xx - xMin) / (xMax - xMin) * (s.w - padL - padR);
+      const Y = (yy) => padT + (s.h - padT - padB) * (1 - (yy - yMin) / (yMax - yMin));
+      s.ctx.strokeStyle = theme.accent; s.ctx.lineWidth = 2; s.ctx.beginPath();
+      let first = true;
+      for (let E = 3.5; E <= 9; E += 0.1) { const xx = 1 / Math.sqrt(E); const yy = Math.log10(halfLife(E, Zd)); const py = Y(Math.max(yMin, Math.min(yMax, yy))); first ? (s.ctx.moveTo(X(xx), py), first = false) : s.ctx.lineTo(X(xx), py); }
+      s.ctx.stroke();
+      const cx = 1 / Math.sqrt(Ea), cyv = Math.max(yMin, Math.min(yMax, logT));
+      s.ctx.fillStyle = theme.warn; s.ctx.shadowColor = theme.warn; s.ctx.shadowBlur = 8;
+      s.ctx.beginPath(); s.ctx.arc(X(cx), Y(cyv), 5, 0, Math.PI * 2); s.ctx.fill(); s.ctx.shadowBlur = 0;
+      s.ctx.fillStyle = theme.text; s.ctx.font = "bold 11px monospace"; s.ctx.textAlign = "left"; s.ctx.fillText("Гейгер–Нэттолл: log T½ от 1/√Eα", padL, 11);
+      s.ctx.fillStyle = theme.textDim; s.ctx.font = "9px monospace"; s.ctx.textAlign = "center"; s.ctx.fillText("1/√Eα", padL + (s.w - padL - padR) / 2, s.h - 6);
+    }
+  }, [Ea, Zd, theme]);
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: theme.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+        Тяжёлое ядро — это потенциальная <b>яма</b> (ядерные силы) плюс <b>кулоновский барьер</b> снаружи.
+        Альфа-частица с энергией ~10 МэВ заперта за барьером высотой ~100 МэВ, но с малой вероятностью
+        туннелирует наружу. Чем выше Eα, тем у́же барьер и тем короче период полураспада — закон Гейгера–Нэттолла.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 4 }}>
+        <Slider label="Энергия α-частицы Eα" value={Ea} min={3.5} max={9} step={0.05} onChange={setEa} theme={theme} unit=" МэВ" format={v => v.toFixed(2)} />
+        <Slider label="Заряд ядра Z (дочернее)" value={Zd} min={78} max={92} step={1} onChange={setZd} theme={theme} />
+      </div>
+      <StatRow theme={theme} items={[
+        { l: "барьер V(R)", v: Vpeak.toFixed(0) + " МэВ", c: theme.accent2 },
+        { l: "D ~ e⁻²ᴳ", v: Math.exp(-2 * gamow(Ea, Zd)).toExponential(1), c: theme.accent3 },
+        { l: "период T½", v: fmtTime(T12), c: theme.warn },
+      ]} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div><Label>Потенциал ядра + Кулон</Label><canvas ref={cV} style={cs(theme, 240)} /></div>
+        <div><Label>Период полураспада</Label><canvas ref={cGN} style={cs(theme, 240)} /></div>
+      </div>
+      <InfoBox text={
+        `Eα = ${Ea.toFixed(2)} МэВ, барьер ≈ ${Vpeak.toFixed(0)} МэВ. Прибавьте всего ~1 МэВ к энергии — и период полураспада меняется на ПОРЯДКИ (правый график почти прямой в логарифме). Так U-238 (Eα≈4.3) живёт ~4.5 млрд лет, а Po-212 (Eα≈8.9) — доли микросекунды. Та же формула барьера даёт оценку и для холодного синтеза (д/з №3): там барьер пройти практически невозможно.`
+      } theme={theme} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 7: SCANNING TUNNELING MICROSCOPE
+// ═══════════════════════════════════════════════════════════════════════
+function STMTab({ theme }) {
+  const [tipH, setTipH] = useState(5);   // Å, tip height above mean surface
+  const [phi, setPhi] = useState(4);     // eV, work function
+  const cScan = useRef(null), cI = useRef(null);
+  const animRef = useRef(null), tRef = useRef(0), scanRef = useRef(0);
+  const kappa = 0.512 * Math.sqrt(phi);  // 1/Å
+  // surface atoms (Gaussian bumps), x in Å over [0,40]
+  const atoms = [{ x: 8, A: 2.2 }, { x: 18, A: 2.6 }, { x: 27, A: 2.0 }, { x: 34, A: 2.4 }];
+  const surf = (x) => atoms.reduce((s, a) => s + a.A * Math.exp(-((x - a.x) ** 2) / 6), 0);
+  const gapAt = (x) => Math.max(0.5, tipH + 3 - surf(x)); // baseline tip 3Å above mean+tipH
+  const curAt = (x) => Math.exp(-2 * kappa * gapAt(x));
+  const sensitivity = Math.exp(2 * kappa); // current factor per +1 Å closer
+
+  const draw = useCallback((t) => {
+    scanRef.current += 0.15; if (scanRef.current > 40) scanRef.current = 0;
+    const xScan = scanRef.current;
+    // ── schematic ──
+    if (cScan.current) {
+      const { ctx, w, h } = setup(cScan.current);
+      ctx.clearRect(0, 0, w, h);
+      const padL = 12, padR = 12, baseY = h * 0.82;
+      const X = (x) => padL + (x / 40) * (w - padL - padR);
+      const Yz = (z) => baseY - z * 10;
+      // surface fill
+      ctx.fillStyle = theme.accent4 + "33"; ctx.strokeStyle = theme.accent4; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(X(0), baseY + 20);
+      for (let x = 0; x <= 40; x += 0.5) ctx.lineTo(X(x), Yz(surf(x)));
+      ctx.lineTo(X(40), baseY + 20); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); for (let x = 0; x <= 40; x += 0.5) { x === 0 ? ctx.moveTo(X(x), Yz(surf(x))) : ctx.lineTo(X(x), Yz(surf(x))); } ctx.stroke();
+      // tip (triangle) at xScan, apex above surface by gap
+      const apexY = Yz(surf(xScan)) - gapAt(xScan) * 10;
+      ctx.fillStyle = theme.accent; ctx.strokeStyle = theme.accent;
+      ctx.beginPath(); ctx.moveTo(X(xScan), apexY); ctx.lineTo(X(xScan) - 16, apexY - 40); ctx.lineTo(X(xScan) + 16, apexY - 40); ctx.closePath(); ctx.fill();
+      // tunneling glow in gap
+      ctx.strokeStyle = theme.warn; ctx.globalAlpha = Math.min(1, curAt(xScan) * 3 + 0.15); ctx.setLineDash([2, 2]); ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(X(xScan), apexY); ctx.lineTo(X(xScan), Yz(surf(xScan))); ctx.stroke(); ctx.setLineDash([]); ctx.globalAlpha = 1;
+      ctx.fillStyle = theme.warn; ctx.font = "10px monospace"; ctx.textAlign = "center";
+      ctx.fillText("d=" + gapAt(xScan).toFixed(1) + "Å", X(xScan), apexY - 46);
+      ctx.fillStyle = theme.accent; ctx.textAlign = "left"; ctx.fillText("игла", X(xScan) + 18, apexY - 30);
+      ctx.fillStyle = theme.accent4; ctx.fillText("образец (атомы)", padL + 4, h - 8);
+    }
+    // ── current trace (the STM image) ──
+    if (cI.current) {
+      const s = setup(cI.current);
+      s.ctx.clearRect(0, 0, s.w, s.h);
+      grid(s.ctx, s.w, s.h, theme, 4, 8);
+      const padL = 30, padR = 12, padT = 14, padB = 22;
+      const X = (x) => padL + (x / 40) * (s.w - padL - padR);
+      let maxI = 1e-9; for (let x = 0; x <= 40; x += 0.5) maxI = Math.max(maxI, curAt(x));
+      const Y = (cur) => padT + (s.h - padT - padB) * (1 - cur / maxI);
+      s.ctx.strokeStyle = theme.accent3; s.ctx.lineWidth = 2; s.ctx.beginPath();
+      for (let x = 0; x <= xScan; x += 0.3) { const yy = Y(curAt(x)); x === 0 ? s.ctx.moveTo(X(x), yy) : s.ctx.lineTo(X(x), yy); }
+      s.ctx.stroke();
+      // current marker
+      s.ctx.fillStyle = theme.warn; s.ctx.beginPath(); s.ctx.arc(X(xScan), Y(curAt(xScan)), 4, 0, Math.PI * 2); s.ctx.fill();
+      s.ctx.fillStyle = theme.text; s.ctx.font = "bold 11px monospace"; s.ctx.textAlign = "left"; s.ctx.fillText("туннельный ток I(x) → топология", padL, 11);
+      s.ctx.fillStyle = theme.textDim; s.ctx.font = "9px monospace"; s.ctx.textAlign = "center"; s.ctx.fillText("положение иглы x, Å", padL + (s.w - padL - padR) / 2, s.h - 6);
+    }
+  }, [tipH, phi, kappa, theme]);
+
+  useEffect(() => {
+    let running = true;
+    const loop = () => { if (!running) return; tRef.current += 0.03; draw(tRef.current); animRef.current = requestAnimationFrame(loop); };
+    loop(); return () => { running = false; cancelAnimationFrame(animRef.current); };
+  }, [draw]);
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: theme.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+        Острая игла (на конце — буквально несколько атомов) подносится к проводящему образцу на доли нанометра.
+        Электроны <b>туннелируют</b> через вакуумный зазор (барьер ≈ работа выхода φ), и ток I ∝ e<sup>−2κd</sup>.
+        Поскольку ток экспоненциально зависит от зазора, изменение высоты на один атом меняет его в разы —
+        так строится карта поверхности с атомным разрешением.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 4 }}>
+        <Slider label="Высота иглы" value={tipH} min={1} max={9} step={0.2} onChange={setTipH} theme={theme} unit=" Å" format={v => v.toFixed(1)} />
+        <Slider label="Работа выхода φ" value={phi} min={2} max={6} step={0.1} onChange={setPhi} theme={theme} unit=" эВ" format={v => v.toFixed(1)} />
+      </div>
+      <StatRow theme={theme} items={[
+        { l: "κ затухания", v: kappa.toFixed(2) + " Å⁻¹", c: theme.accent3 },
+        { l: "ток на 1Å ближе", v: "×" + sensitivity.toFixed(1), c: theme.warn },
+        { l: "разрешение", v: sensitivity > 5 ? "атомное" : "грубое", c: theme.accent4 },
+      ]} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div><Label>Игла над поверхностью</Label><canvas ref={cScan} style={cs(theme, 240)} /></div>
+        <div><Label>Сканированный ток</Label><canvas ref={cI} style={cs(theme, 240)} /></div>
+      </div>
+      <InfoBox text={
+        `При φ = ${phi.toFixed(1)} эВ κ ≈ ${kappa.toFixed(2)} Å⁻¹: приближение иглы на 1 Å увеличивает ток в ${sensitivity.toFixed(1)} раз. Именно эта экспоненциальная чувствительность позволяет «видеть» отдельные атомы — ток с ближайшего к образцу атома иглы подавляет вклад всех остальных. Сканируя строку за строкой, получают трёхмерную топологию поверхности.`
+      } theme={theme} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 8: INFINITE SQUARE WELL
+// ═══════════════════════════════════════════════════════════════════════
+function InfWellTab({ theme }) {
+  const [n, setN] = useState(1);
+  const [L, setL] = useState(1);
+  const cLevels = useRef(null), cPsi = useRef(null);
+  const animRef = useRef(null), tRef = useRef(0);
+  const En = (m) => (m * m * Math.PI * Math.PI) / (2 * L * L);
+  const Ecur = En(n);
+
+  const draw = useCallback((t) => {
+    // ── energy levels in the well ──
+    if (cLevels.current) {
+      const { ctx, w, h } = setup(cLevels.current);
+      ctx.clearRect(0, 0, w, h);
+      const padL = 40, padR = 16, padT = 14, padB = 24;
+      const nMaxShow = 6, Etop = En(nMaxShow) * 1.05;
+      const X = (x) => padL + (x / L) * (w - padL - padR);
+      const Y = (E) => padT + (h - padT - padB) * (1 - E / Etop);
+      // walls
+      ctx.strokeStyle = theme.accent2; ctx.lineWidth = 2.5;
+      ctx.beginPath(); ctx.moveTo(X(0), padT); ctx.lineTo(X(0), h - padB); ctx.lineTo(X(L), h - padB); ctx.lineTo(X(L), padT); ctx.stroke();
+      // levels E_n ∝ n^2
+      for (let m = 1; m <= nMaxShow; m++) {
+        const yy = Y(En(m)); const on = m === n;
+        ctx.strokeStyle = on ? theme.warn : theme.textDim + "66"; ctx.lineWidth = on ? 2 : 1; ctx.setLineDash(on ? [] : [3, 3]);
+        ctx.beginPath(); ctx.moveTo(X(0), yy); ctx.lineTo(X(L), yy); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = on ? theme.warn : theme.textDim; ctx.font = (on ? "bold " : "") + "10px monospace"; ctx.textAlign = "right";
+        ctx.fillText("n=" + m, X(0) - 4, yy + 3);
+        // wavefunction riding on its level
+        if (on) {
+          ctx.strokeStyle = theme.accent; ctx.lineWidth = 2; ctx.beginPath();
+          const amp = (h - padT - padB) / nMaxShow * 0.9;
+          for (let i = 0; i <= 200; i++) { const x = L * i / 200; const psi = Math.sin(m * Math.PI * x / L) * Math.cos(t * 1.5); const yyy = yy - psi * amp; i === 0 ? ctx.moveTo(X(x), yyy) : ctx.lineTo(X(x), yyy); }
+          ctx.stroke();
+        }
+      }
+      ctx.fillStyle = theme.text; ctx.font = "bold 11px monospace"; ctx.textAlign = "left"; ctx.fillText("уровни Eₙ ∝ n²", padL, 11);
+      ctx.fillStyle = theme.textDim; ctx.font = "9px monospace"; ctx.textAlign = "center"; ctx.fillText("x", w - padR, h - padB + 14);
+    }
+    // ── psi_n and |psi_n|^2 ──
+    if (cPsi.current) {
+      const s = setup(cPsi.current);
+      s.ctx.clearRect(0, 0, s.w, s.h);
+      const padL = 16, padR = 12, midY = s.h * 0.5;
+      const X = (x) => padL + (x / L) * (s.w - padL - padR);
+      s.ctx.strokeStyle = theme.axis + "55"; s.ctx.lineWidth = 1; s.ctx.beginPath(); s.ctx.moveTo(padL, midY); s.ctx.lineTo(s.w - padR, midY); s.ctx.stroke();
+      const amp = s.h * 0.32, norm = Math.sqrt(2 / L);
+      // |psi|^2 filled
+      s.ctx.fillStyle = theme.accent + "33"; s.ctx.beginPath(); s.ctx.moveTo(X(0), midY);
+      for (let i = 0; i <= 220; i++) { const x = L * i / 220; const p = (norm * Math.sin(n * Math.PI * x / L)) ** 2; s.ctx.lineTo(X(x), midY - p * amp * 0.6); }
+      s.ctx.lineTo(X(L), midY); s.ctx.closePath(); s.ctx.fill();
+      // psi (animated)
+      s.ctx.strokeStyle = theme.warn; s.ctx.lineWidth = 2; s.ctx.beginPath();
+      for (let i = 0; i <= 220; i++) { const x = L * i / 220; const psi = norm * Math.sin(n * Math.PI * x / L) * Math.cos(t * 1.5); const yy = midY - psi * amp; i === 0 ? s.ctx.moveTo(X(x), yy) : s.ctx.lineTo(X(x), yy); }
+      s.ctx.stroke();
+      // node markers
+      for (let k = 1; k < n; k++) { const xn = L * k / n; s.ctx.fillStyle = theme.accent3; s.ctx.beginPath(); s.ctx.arc(X(xn), midY, 3, 0, Math.PI * 2); s.ctx.fill(); }
+      s.ctx.fillStyle = theme.warn; s.ctx.font = "11px monospace"; s.ctx.textAlign = "left"; s.ctx.fillText("ψₙ(x)", padL + 4, midY - amp); 
+      s.ctx.fillStyle = theme.accent; s.ctx.fillText("|ψₙ|²", padL + 50, midY - amp);
+      s.ctx.fillStyle = theme.accent3; s.ctx.textAlign = "right"; s.ctx.fillText((n - 1) + " узлов", s.w - padR, midY + amp + 4);
+    }
+  }, [n, L, theme]);
+
+  useEffect(() => {
+    let running = true;
+    const loop = () => { if (!running) return; tRef.current += 0.03; draw(tRef.current); animRef.current = requestAnimationFrame(loop); };
+    loop(); return () => { running = false; cancelAnimationFrame(animRef.current); };
+  }, [draw]);
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: theme.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+        Яма с бесконечными стенками: частица заперта в области шириной L, снаружи ψ = 0. На стенках ψ обращается
+        в ноль, поэтому внутри укладывается <b>целое число полуволн</b>. Отсюда — <b>дискретные уровни</b>
+        Eₙ ∝ n². Это прямой аналог стоячей волны между зеркалами (интерферометр Фабри–Перо).
+        Число узлов ψ равно n−1.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 4 }}>
+        <Slider label="Уровень n" value={n} min={1} max={6} step={1} onChange={setN} theme={theme} />
+        <Slider label="Ширина ямы L" value={L} min={0.5} max={2} step={0.05} onChange={setL} theme={theme} format={v => v.toFixed(2)} />
+      </div>
+      <StatRow theme={theme} items={[
+        { l: "n", v: n, c: theme.warn },
+        { l: "Eₙ (∝ n²)", v: Ecur.toFixed(2), c: theme.accent },
+        { l: "узлов", v: n - 1, c: theme.accent3 },
+        { l: "полуволн", v: n, c: theme.accent4 },
+      ]} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div><Label>Уровни энергии в яме</Label><canvas ref={cLevels} style={cs(theme, 240)} /></div>
+        <div><Label>Волновая функция и плотность</Label><canvas ref={cPsi} style={cs(theme, 240)} /></div>
+      </div>
+      <InfoBox text={
+        n === 1
+          ? "Основное состояние n=1: одна полуволна, узлов нет, частица с наибольшей вероятностью в центре. Заметьте: даже минимальная энергия E₁ ≠ 0 — частица не может «лежать на дне» (следствие соотношения неопределённостей)."
+          : `n=${n}: укладывается ${n} полуволн, ${n - 1} узлов внутри. В узлах вероятность найти частицу равна нулю. Энергия Eₙ = ${Ecur.toFixed(2)} растёт как n² — уровни расходятся всё дальше. Сузьте яму (L↓) — все уровни поднимутся вверх (∝ 1/L²).`
+      } theme={theme} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 9: FINITE SQUARE WELL (graphical transcendental solution)
+// Units ħ=m=1. Well: U=-U0 for |x|<a/2, else 0. Bound: -U0<E<0.
+// (ka/2)^2 + (κa/2)^2 = R^2, R = (a/2)·√(2U0).
+// ═══════════════════════════════════════════════════════════════════════
+function finiteWellStates(U0, a) {
+  const R = (a / 2) * Math.sqrt(2 * U0);
+  const circ = (u) => Math.sqrt(Math.max(0, R * R - u * u));
+  const bisect = (f, lo, hi) => { let fl = f(lo); for (let i = 0; i < 60; i++) { const m = (lo + hi) / 2, fm = f(m); if (Math.sign(fm) === Math.sign(fl)) { lo = m; fl = fm; } else hi = m; } return (lo + hi) / 2; };
+  const feFn = (u) => u * Math.tan(u) - circ(u);
+  const foFn = (u) => -u / Math.tan(u) - circ(u);
+  const states = [];
+  const Npts = 3000, du = R / Npts;
+  let pe = null, po = null;
+  const push = (u, even) => { const k = 2 * u / a; const E = k * k / 2 - U0; const kappa = Math.sqrt(Math.max(0, 2 * U0 - k * k)); states.push({ u, k, E, kappa, even }); };
+  for (let i = 1; i <= Npts; i++) {
+    const u = i * du;
+    const fe = feFn(u), fo = foFn(u);
+    if (pe !== null && isFinite(fe) && isFinite(pe.f) && Math.sign(fe) !== Math.sign(pe.f) && Math.abs(fe - pe.f) < 40) push(bisect(feFn, pe.u, u), true);
+    if (po !== null && isFinite(fo) && isFinite(po.f) && Math.sign(fo) !== Math.sign(po.f) && Math.abs(fo - po.f) < 40) push(bisect(foFn, po.u, u), false);
+    pe = { u, f: fe }; po = { u, f: fo };
+  }
+  states.sort((p, q) => p.E - q.E);
+  return { R, states };
+}
+
+function FinWellTab({ theme }) {
+  const [U0, setU0] = useState(8);
+  const [a, setA] = useState(2);
+  const [sel, setSel] = useState(0);
+  const cGraph = useRef(null), cPsi = useRef(null);
+  const animRef = useRef(null), tRef = useRef(0);
+
+  const { R, states } = React.useMemo(() => finiteWellStates(U0, a), [U0, a]);
+  const nStates = states.length;
+  const selIdx = Math.min(sel, Math.max(0, nStates - 1));
+  const st = states[selIdx];
+
+  const draw = useCallback((t) => {
+    // ── graphical solution: branches vs circle ──
+    if (cGraph.current) {
+      const { ctx, w, h } = setup(cGraph.current);
+      ctx.clearRect(0, 0, w, h);
+      const padL = 30, padR = 12, padT = 16, padB = 22;
+      const uMax = Math.max(R * 1.12, Math.PI * 1.05);
+      const vMax = Math.max(4, R);
+      const X = (u) => padL + (u / uMax) * (w - padL - padR);
+      const Y = (v) => padT + (h - padT - padB) * (1 - (v + vMax) / (2 * vMax));
+      grid(ctx, w, h, theme, 4, 8);
+      // zero axis
+      ctx.strokeStyle = theme.axis + "66"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(padL, Y(0)); ctx.lineTo(w - padR, Y(0)); ctx.stroke();
+      // clipped-curve plotter (strokes each continuous branch separately)
+      const plot = (fn, col, lw, dom) => {
+        ctx.strokeStyle = col; ctx.lineWidth = lw; let pen = false;
+        const lo = dom ? dom[0] : 0.001, hi = dom ? dom[1] : uMax;
+        for (let u = lo; u <= hi; u += 0.008) {
+          const v = fn(u);
+          if (!isFinite(v) || v > vMax || v < -vMax) { if (pen) { ctx.stroke(); pen = false; } continue; }
+          const px = X(u), py = Y(v);
+          if (!pen) { ctx.beginPath(); ctx.moveTo(px, py); pen = true; } else ctx.lineTo(px, py);
+        }
+        if (pen) ctx.stroke();
+      };
+      // green: tan(ka/2) branches
+      plot(u => Math.tan(u), theme.accent4, 1.6);
+      // purple: cosine branch κ/k = √(R²/u² − 1), sine branch −k/κ = −1/√(…)
+      const kkappa = (u) => Math.sqrt(Math.max(0, R * R / (u * u) - 1));
+      plot(u => kkappa(u), theme.accent2, 2, [0.02, R]);
+      plot(u => -1 / kkappa(u), theme.accent3, 2, [0.02, R]);
+      // vertical cutoff at u = R = √(m|U₀|a²/2ħ²)
+      ctx.strokeStyle = theme.warn + "aa"; ctx.setLineDash([4, 3]); ctx.lineWidth = 1.2;
+      ctx.beginPath(); ctx.moveTo(X(R), padT); ctx.lineTo(X(R), h - padB); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = theme.warn; ctx.font = "9px monospace"; ctx.textAlign = "center"; ctx.fillText("√(m|U₀|a²/2ħ²)", X(R), h - padB + 14);
+      // intersection dots = bound states (even on cosine curve, odd on sine curve)
+      states.forEach((s, i) => {
+        const v = s.even ? kkappa(s.u) : -1 / kkappa(s.u);
+        const vy = Math.max(-vMax, Math.min(vMax, v));
+        ctx.fillStyle = i === selIdx ? theme.warn : theme.text;
+        ctx.beginPath(); ctx.arc(X(s.u), Y(vy), i === selIdx ? 5.5 : 3.6, 0, Math.PI * 2); ctx.fill();
+        if (i === selIdx) { ctx.strokeStyle = theme.warn; ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(X(s.u), Y(vy), 8, 0, Math.PI * 2); ctx.stroke(); }
+      });
+      // legend
+      ctx.font = "9px monospace"; ctx.textAlign = "left";
+      ctx.fillStyle = theme.accent4; ctx.fillText("tg(ka/2)", padL + 2, padT + 2);
+      ctx.fillStyle = theme.accent2; ctx.fillText("косинус: κ/k", padL + 2, padT + 13);
+      ctx.fillStyle = theme.accent3; ctx.fillText("синус: −k/κ", padL + 2, padT + 24);
+      ctx.fillStyle = theme.textDim; ctx.textAlign = "right"; ctx.fillText("ka/2", w - padR, Y(0) - 4);
+    }
+    // ── well + bound-state wavefunctions ──
+    if (cPsi.current) {
+      const s = setup(cPsi.current);
+      s.ctx.clearRect(0, 0, s.w, s.h);
+      const padL = 36, padR = 14, padT = 12, padB = 18;
+      const Xmax = a * 1.7;
+      const X = (x) => padL + (x + Xmax) / (2 * Xmax) * (s.w - padL - padR);
+      const Etop = 0.3, Ebot = -U0 * 1.12;
+      const Y = (E) => padT + (s.h - padT - padB) * (1 - (E - Ebot) / (Etop - Ebot));
+      // well shape
+      s.ctx.strokeStyle = theme.accent2; s.ctx.lineWidth = 2; s.ctx.beginPath();
+      s.ctx.moveTo(X(-Xmax), Y(0)); s.ctx.lineTo(X(-a / 2), Y(0)); s.ctx.lineTo(X(-a / 2), Y(-U0));
+      s.ctx.lineTo(X(a / 2), Y(-U0)); s.ctx.lineTo(X(a / 2), Y(0)); s.ctx.lineTo(X(Xmax), Y(0));
+      s.ctx.stroke();
+      // zero axis
+      s.ctx.strokeStyle = theme.axis + "44"; s.ctx.lineWidth = 1; s.ctx.setLineDash([2, 3]);
+      s.ctx.beginPath(); s.ctx.moveTo(padL, Y(0)); s.ctx.lineTo(s.w - padR, Y(0)); s.ctx.stroke(); s.ctx.setLineDash([]);
+      // each state: level line + wavefunction
+      states.forEach((sa, i) => {
+        const yl = Y(sa.E); const on = i === selIdx;
+        s.ctx.strokeStyle = on ? theme.warn : theme.textDim + "66"; s.ctx.lineWidth = on ? 1.8 : 1; s.ctx.setLineDash(on ? [] : [3, 3]);
+        s.ctx.beginPath(); s.ctx.moveTo(X(-a / 2), yl); s.ctx.lineTo(X(a / 2), yl); s.ctx.stroke(); s.ctx.setLineDash([]);
+        s.ctx.fillStyle = on ? theme.warn : theme.textDim; s.ctx.font = (on ? "bold " : "") + "9px monospace"; s.ctx.textAlign = "right";
+        s.ctx.fillText("E" + i, X(-a / 2) - 3, yl + 3);
+        if (on) {
+          const amp = (s.h - padT - padB) * 0.16;
+          s.ctx.strokeStyle = theme.accent; s.ctx.lineWidth = 2; s.ctx.beginPath();
+          const phase = Math.cos(t * 1.5);
+          for (let p = 0; p <= 260; p++) {
+            const x = -Xmax + 2 * Xmax * p / 260;
+            let psi;
+            if (Math.abs(x) <= a / 2) psi = sa.even ? Math.cos(sa.k * x) : Math.sin(sa.k * x);
+            else { const edge = sa.even ? Math.cos(sa.k * a / 2) : Math.sin(sa.k * a / 2) * Math.sign(x); psi = edge * Math.exp(-sa.kappa * (Math.abs(x) - a / 2)); }
+            const yy = yl - psi * amp * phase;
+            p === 0 ? s.ctx.moveTo(X(x), yy) : s.ctx.lineTo(X(x), yy);
+          }
+          s.ctx.stroke();
+        }
+      });
+      s.ctx.fillStyle = theme.text; s.ctx.font = "bold 10px monospace"; s.ctx.textAlign = "left"; s.ctx.fillText("яма + связанные ψ", padL, padT + 2);
+      s.ctx.fillStyle = theme.textDim; s.ctx.font = "9px monospace"; s.ctx.textAlign = "right"; s.ctx.fillText("x", s.w - padR, Y(0) - 3);
+    }
+  }, [U0, a, selIdx, R, states, theme]);
+
+  useEffect(() => {
+    let running = true;
+    const loop = () => { if (!running) return; tRef.current += 0.03; draw(tRef.current); animRef.current = requestAnimationFrame(loop); };
+    loop(); return () => { running = false; cancelAnimationFrame(animRef.current); };
+  }, [draw]);
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: theme.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+        Яма конечной глубины U₀. Снаружи ψ не ноль, а затухающая экспонента, поэтому уровней — <b>конечное число</b>.
+        В силу симметрии решения чисто чётные (cos) или нечётные (sin); сшивка даёт трансцендентное уравнение
+        tg(ka/2) = κ/k (чётные) или −k/κ (нечётные). Решения — точки пересечения зелёных веток tg(ka/2)
+        с фиолетовыми кривыми κ/k и −k/κ; вертикальная отсечка стоит при ka/2 = √(m|U₀|a²/2ħ²).
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 10, marginBottom: 4 }}>
+        <Slider label="Глубина U₀" value={U0} min={1} max={40} step={0.5} onChange={v => { setU0(v); setSel(0); }} theme={theme} format={v => v.toFixed(1)} />
+        <Slider label="Ширина a" value={a} min={1} max={6} step={0.1} onChange={v => { setA(v); setSel(0); }} theme={theme} format={v => v.toFixed(1)} />
+        <Slider label="Состояние №" value={selIdx} min={0} max={Math.max(0, nStates - 1)} step={1} onChange={setSel} theme={theme} />
+      </div>
+      <StatRow theme={theme} items={[
+        { l: "радиус R", v: R.toFixed(2), c: theme.warn },
+        { l: "связанных состояний", v: nStates, c: theme.accent4 },
+        { l: "тип", v: st ? (st.even ? "чётное" : "нечётное") : "—", c: theme.accent2 },
+        { l: "E (выбр.)", v: st ? st.E.toFixed(2) : "—", c: theme.accent },
+      ]} />
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+        <div><Label>Графическое решение</Label><canvas ref={cGraph} style={cs(theme, 240)} /></div>
+        <div><Label>Уровни и волновые функции</Label><canvas ref={cPsi} style={cs(theme, 240)} /></div>
+      </div>
+      <InfoBox text={
+        `R = ${R.toFixed(2)} → ${nStates} связанн${nStates === 1 ? "ое состояние" : "ых состояния(й)"} (число уровней ≈ ⌈R/(π/2)⌉). ` +
+        `Три факта со слайда: (1) в прямоугольной яме конечной глубины — всегда конечное число связанных состояний; ` +
+        `(2) в одномерном случае связанное состояние есть всегда (чётному нужно лишь R>0, нечётному — R>π/2); ` +
+        `(3) в достаточно мелкой яме (R<π/2) остаётся единственное — чётное — состояние. ` +
+        `ψ при этом «вытекает» за стенки хвостами ∝ e^(−κ|x|), в отличие от бесконечной ямы. В 2D, кстати, гарантии связанного состояния для мелкой ямы уже нет.`
+      } theme={theme} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// TAB 10: QUANTUM HARMONIC OSCILLATOR
+// Units ħ=m=1. U=½ω²x². E_n = ω(n+½). ψ_n = H_n(ξ)e^{-ξ²/2}, ξ=√ω·x.
+// ═══════════════════════════════════════════════════════════════════════
+function ShoTab({ theme }) {
+  const [n, setN] = useState(0);
+  const [omega, setOmega] = useState(1);
+  const cRef = useRef(null);
+  const animRef = useRef(null), tRef = useRef(0);
+
+  const En = (m) => omega * (m + 0.5);
+  const hermite = (m, xi) => { let h0 = 1, h1 = 2 * xi; if (m === 0) return 1; if (m === 1) return h1; for (let i = 2; i <= m; i++) { const h2 = 2 * xi * h1 - 2 * (i - 1) * h0; h0 = h1; h1 = h2; } return h1; };
+  // FIXED viewport so ω visibly changes the picture (steeper well, wider level spacing, narrower ψ)
+  const ETOP = 7.2, XMAX = 5;
+  const mMax = Math.max(0, Math.min(8, Math.floor(ETOP / omega - 0.5)));
+  const nSel = Math.min(n, mMax);
+
+  const draw = useCallback((t) => {
+    if (!cRef.current) return;
+    const { ctx, w, h } = setup(cRef.current);
+    ctx.clearRect(0, 0, w, h);
+    const padL = 38, padR = 14, padT = 16, padB = 22;
+    const ph = h - padT - padB;
+    const mTop = Math.max(0, Math.min(8, Math.floor(ETOP / omega - 0.5)));
+    const nCur = Math.min(n, mTop);
+    const X = (x) => padL + (x + XMAX) / (2 * XMAX) * (w - padL - padR);
+    const Y = (E) => padT + ph * (1 - E / ETOP);
+    grid(ctx, w, h, theme, 4, 8);
+    // parabola U(x)=½ω²x²  (draw only the part within the energy window)
+    ctx.strokeStyle = theme.accent2; ctx.lineWidth = 2; let ppen = false;
+    for (let x = -XMAX; x <= XMAX; x += XMAX / 200) {
+      const U = 0.5 * omega * omega * x * x;
+      if (U > ETOP) { if (ppen) { ctx.stroke(); ppen = false; } continue; }
+      const px = X(x), py = Y(U);
+      if (!ppen) { ctx.beginPath(); ctx.moveTo(px, py); ppen = true; } else ctx.lineTo(px, py);
+    }
+    if (ppen) ctx.stroke();
+    ctx.fillStyle = theme.accent2; ctx.font = "10px monospace"; ctx.textAlign = "right"; ctx.fillText("U=½ω²x²", w - padR, padT + 11);
+    // equidistant levels that fit in the window
+    const gap = ph * (omega / ETOP);                 // on-screen spacing between neighbours
+    const amp = Math.min(ph * 0.17, Math.max(gap * 0.5, 8));
+    for (let m = 0; m <= mTop; m++) {
+      const yl = Y(En(m)); const on = m === nCur;
+      const xt = Math.sqrt(2 * En(m)) / omega;        // classical turning point
+      ctx.strokeStyle = on ? theme.warn : theme.textDim + "55"; ctx.lineWidth = on ? 1.8 : 1; ctx.setLineDash(on ? [] : [3, 3]);
+      ctx.beginPath(); ctx.moveTo(X(-xt), yl); ctx.lineTo(X(xt), yl); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = on ? theme.warn : theme.textDim; ctx.font = (on ? "bold " : "") + "9px monospace"; ctx.textAlign = "right";
+      ctx.fillText("n=" + m, padL - 4, yl + 3);
+      if (on) {
+        let maxv = 1e-9;
+        for (let p = 0; p <= 200; p++) { const x = -XMAX + 2 * XMAX * p / 200; const xi = Math.sqrt(omega) * x; const v = hermite(m, xi) * Math.exp(-xi * xi / 2); if (Math.abs(v) > maxv) maxv = Math.abs(v); }
+        ctx.strokeStyle = theme.accent; ctx.lineWidth = 2; ctx.beginPath();
+        const phase = Math.cos(t * 1.5);
+        for (let p = 0; p <= 260; p++) { const x = -XMAX + 2 * XMAX * p / 260; const xi = Math.sqrt(omega) * x; const psi = hermite(m, xi) * Math.exp(-xi * xi / 2) / maxv; const yy = yl - psi * amp * phase; p === 0 ? ctx.moveTo(X(x), yy) : ctx.lineTo(X(x), yy); }
+        ctx.stroke();
+      }
+    }
+    // zero-point marker E0 = ½ħω
+    const y0 = Y(En(0));
+    ctx.strokeStyle = theme.accent4 + "66"; ctx.lineWidth = 1; ctx.setLineDash([2, 3]);
+    ctx.beginPath(); ctx.moveTo(padL, y0); ctx.lineTo(X(0), y0); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = theme.accent4; ctx.font = "9px monospace"; ctx.textAlign = "left"; ctx.fillText("E₀=½ħω", X(0) + 4, y0 - 3);
+    ctx.fillStyle = theme.text; ctx.font = "bold 10px monospace"; ctx.textAlign = "left"; ctx.fillText("уровни Eₙ = ħω(n+½), шаг ħω", padL, padT + 2);
+    ctx.fillStyle = theme.textDim; ctx.font = "9px monospace"; ctx.textAlign = "right"; ctx.fillText("x", w - padR, Y(0) - 2);
+  }, [n, omega, theme]);
+
+  useEffect(() => {
+    let running = true;
+    const loop = () => { if (!running) return; tRef.current += 0.03; draw(tRef.current); animRef.current = requestAnimationFrame(loop); };
+    loop(); return () => { running = false; cancelAnimationFrame(animRef.current); };
+  }, [draw]);
+
+  return (
+    <div>
+      <p style={{ fontSize: 14, color: theme.textDim, marginBottom: 16, lineHeight: 1.6 }}>
+        Параболическая яма U = ½kx² — это грузик на пружинке, двухатомная молекула, колебания решётки.
+        Решение уравнения Шрёдингера даёт <b>эквидистантные</b> уровни Eₙ = ħω(n + ½): расстояние всегда ħω
+        (в отличие от ямы, где Eₙ ∝ n²). Нижний уровень не на дне, а приподнят на ½ħω — <b>нулевая энергия</b>
+        (следствие соотношения неопределённостей). Меняйте ω: парабола становится круче, лестница уровней
+        раздвигается (в окно влезает меньше уровней), а волновые функции сужаются.
+      </p>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 4 }}>
+        <Slider label="Уровень n" value={nSel} min={0} max={mMax} step={1} onChange={setN} theme={theme} />
+        <Slider label="Частота ω" value={omega} min={0.4} max={2.5} step={0.05} onChange={setOmega} theme={theme} format={v => v.toFixed(2)} />
+      </div>
+      <StatRow theme={theme} items={[
+        { l: "n", v: nSel, c: theme.warn },
+        { l: "Eₙ = ħω(n+½)", v: En(nSel).toFixed(2), c: theme.accent },
+        { l: "шаг ħω", v: omega.toFixed(2), c: theme.accent2 },
+        { l: "нулевая ½ħω", v: (omega / 2).toFixed(2), c: theme.accent4 },
+      ]} />
+      <canvas ref={cRef} style={cs(theme, 300)} />
+      <InfoBox text={
+        nSel === 0
+          ? `Основное состояние n=0: гауссиан без узлов, энергия E₀ = ½ħω = ${(omega / 2).toFixed(2)} ≠ 0. Частица «дрожит» даже при T=0 — иначе нарушилось бы соотношение неопределённостей. Так колеблются атомы в молекуле в основном состоянии. При большом ω яма круче, основное состояние у́же и выше.`
+          : `n=${nSel}: ${nSel} узлов, энергия Eₙ = ${En(nSel).toFixed(2)}. Все уровни отстоят ровно на ħω = ${omega.toFixed(2)} — поэтому молекула поглощает/излучает фотоны строго этой частоты (колебательные спектры). Увеличьте ω — лестница растягивается и в фиксированное окно энергий помещается меньше уровней.`
+      } theme={theme} />
+    </div>
+  );
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MAIN APP
+// ═══════════════════════════════════════════════════════════════════════
+function App() {
+  const [themeKey, setThemeKey] = useState("dark");
+  const [tab, setTab] = useState("packet");
+  const [menuOpen, setMenuOpen] = useState(false);
+  const t = THEMES[themeKey];
+  const currentTab = TABS.find(tb => tb.id === tab);
+
+  return (
+    <div data-theme={themeKey} style={{ minHeight: "100vh", background: t.bg, color: t.text, fontFamily: "'Segoe UI','Noto Sans',system-ui,sans-serif", transition: "background 0.3s, color 0.3s", padding: "20px 16px" }}>
+      <style>{`
+        input[type=range]::-webkit-slider-thumb { appearance: none; width: 14px; height: 14px; border-radius: 50%; background: ${t.sliderThumb}; cursor: pointer; box-shadow: 0 0 6px ${t.sliderThumb}88; }
+        input[type=range]::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; border: none; background: ${t.sliderThumb}; cursor: pointer; }
+        * { box-sizing: border-box; } ::selection { background: ${t.accent}44; }
+      `}</style>
+      <div style={{ maxWidth: 960, margin: "0 auto" }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+          <div>
+            <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}><span style={{ color: t.accent }}>⚛</span> Ямы и барьеры <span style={{ color: t.accent }}>⚛</span></h1>
+            <div style={{ fontSize: 12, color: t.textDim, marginTop: 2 }}>Интерактивные демонстрации · Лекция 5</div>
+          </div>
+          <button onClick={() => setThemeKey(themeKey === "dark" ? "light" : "dark")} style={{ padding: "6px 14px", borderRadius: 20, border: `1px solid ${t.panelBorder}`, background: t.btnBg, color: t.text, cursor: "pointer", fontSize: 13, fontWeight: 500 }}>
+            {themeKey === "dark" ? "☀ Светлая" : "🌙 Тёмная"}
+          </button>
+        </div>
+
+        <div style={{ position: "relative", marginBottom: 20 }}>
+          <button onClick={() => setMenuOpen(!menuOpen)} style={{
+            width: "100%", padding: "12px 18px", borderRadius: 10,
+            border: `1px solid ${t.dropBorder}`, background: t.dropBg,
+            color: t.text, cursor: "pointer", fontSize: 15, fontWeight: 600,
+            display: "flex", justifyContent: "space-between", alignItems: "center", boxShadow: t.shadow
+          }}>
+            <span><span style={{ color: t.accent, marginRight: 8 }}>▸</span>{currentTab?.label}</span>
+            <span style={{ color: t.textDim, fontSize: 12, transform: menuOpen ? "rotate(180deg)" : "rotate(0deg)", transition: "transform 0.2s" }}>▼</span>
+          </button>
+          {menuOpen && (
+            <div style={{ position: "absolute", top: "100%", left: 0, right: 0, marginTop: 4, zIndex: 100, background: t.dropBg, border: `1px solid ${t.dropBorder}`, borderRadius: 10, boxShadow: t.shadow, overflow: "hidden" }}>
+              {TABS.map(tb => (
+                <button key={tb.id} onClick={() => { setTab(tb.id); setMenuOpen(false); }} style={{
+                  width: "100%", padding: "11px 18px", border: "none", cursor: "pointer",
+                  background: tab === tb.id ? t.accent + "22" : "transparent",
+                  color: tab === tb.id ? t.accent : t.text,
+                  fontSize: 14, fontWeight: tab === tb.id ? 700 : 400,
+                  textAlign: "left", display: "block", borderBottom: `1px solid ${t.dropBorder}22`
+                }}
+                  onMouseEnter={e => { if (tab !== tb.id) e.target.style.background = t.accent + "11"; }}
+                  onMouseLeave={e => { if (tab !== tb.id) e.target.style.background = "transparent"; }}
+                >{tb.label}</button>
+              ))}
+            </div>
+          )}
+        </div>
+        {menuOpen && <div style={{ position: "fixed", inset: 0, zIndex: 99 }} onClick={() => setMenuOpen(false)} />}
+
+        <div style={{ background: t.panel, borderRadius: 14, padding: 24, border: `1px solid ${t.panelBorder}`, boxShadow: t.shadow }}>
+          {tab === "packet" && <PacketTab theme={t} />}
+          {tab === "step" && <StepTab theme={t} />}
+          {tab === "barrier" && <BarrierTab theme={t} />}
+          {tab === "resonance" && <ResonanceTab theme={t} />}
+          {tab === "prisms" && <PrismsTab theme={t} />}
+          {tab === "alpha" && <AlphaTab theme={t} />}
+          {tab === "stm" && <STMTab theme={t} />}
+          {tab === "infwell" && <InfWellTab theme={t} />}
+          {tab === "finwell" && <FinWellTab theme={t} />}
+          {tab === "sho" && <ShoTab theme={t} />}
+        </div>
+        <div style={{ textAlign: "center", fontSize: 11, color: t.textDim, marginTop: 16, opacity: 0.6 }}>
+          Лекция 5 · Ямы и барьеры · 10 интерактивных демонстраций · Innopolis 2025
+        </div>
+      </div>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById('root'));
+root.render(React.createElement(App));
+  </script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+/* Палитра лекции «Электрон» — индиго. Только токены, никаких правил. */
+:root {
+  --ink: #1b1b2f;
+  --muted: #6e6e80;
+  --accent: #3e2f8e;
+  --chip: #f2f0fb;
+  --demo-fill: #edeaf8;
+  --title-sub: #d9d4f2;
+}
