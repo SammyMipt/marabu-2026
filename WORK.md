@@ -80,6 +80,30 @@
 
 ---
 
+## Как добавлять медиа
+
+Оригиналы на Wikimedia Commons весят неприлично много (20 секунд видео — 67 МБ). У каждого ролика есть транскоды, их и качаем:
+
+```
+https://upload.wikimedia.org/wikipedia/commons/transcoded/<X>/<XY>/<Файл>/<Файл>.720p.vp9.webm
+```
+
+где `<X>/<XY>` — те же две буквы хэша, что в прямой ссылке на оригинал. Скачивать по одному файлу за раз и обязательно со своим User-Agent: Wikimedia режет частые анонимные запросы (HTTP 429).
+
+```bash
+curl -sL --retry 3 --retry-delay 5 \
+  -A "MarabuLectureDeck/1.0 (offline lecture slides; klimenok.kl@gmail.com)" \
+  -o media/имя.webm "<URL транскода>"
+```
+
+Автора и лицензию берём из API и вносим в `media/CREDITS.md` — CC BY требует атрибуции:
+
+```
+https://commons.wikimedia.org/w/api.php?action=query&titles=File:<Файл>&prop=imageinfo&iiprop=extmetadata&format=json
+```
+
+Ролик не ставится на слайд, пока его не посмотрели своими глазами: описания на Commons регулярно расходятся с содержимым кадра.
+
 ## Мелочи, которые стоит знать
 
 - Превью-панель браузера агрессивно кеширует `slides.js` и `deck.js`. Если правки не видны — открывать в новой вкладке или через временную страницу с `fetch(..., {cache:'no-store'})`.
