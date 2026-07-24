@@ -1,0 +1,472 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Электроскоп — что перелетает при трении</title>
+<link rel="stylesheet" href="../shared/demo.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../shared/vendor/react.production.min.js"></script>
+<script src="../shared/vendor/react-dom.production.min.js"></script>
+<script src="../shared/vendor/htm.js"></script>
+<script>
+'use strict';
+var h = React.createElement;
+var html = htm.bind(h);
+var useState = React.useState, useRef = React.useRef, useEffect = React.useEffect;
+
+/* ══════════════════ физика ══════════════════
+
+   Трибоэлектрический ряд: чем больше tribo, тем охотнее материал ОТДАЁТ
+   электроны (и потому сам заряжается плюсом). Значения дают привычный
+   школьный результат: стекло о шёлк — плюс, эбонит о шерсть — минус. */
+
+var RODS = [
+  { id:'glass',   name:'стеклянная палочка', g:'f', short:'Стекло',  tribo: 4, body:'#dfe9f2', edge:'#9fb6c9' },
+  { id:'ebonite', name:'эбонитовая палочка', g:'f', short:'Эбонит',  tribo:-3, body:'#33333f', edge:'#1b1b24' },
+  { id:'pvc',     name:'ПВХ-трубка',         g:'f', short:'ПВХ',     tribo:-4, body:'#e9e9ef', edge:'#b9b9c6' }
+];
+var CLOTHS = [
+  { id:'silk',  name:'шёлк',   g:'m', short:'Шёлк',   tribo: 1, color:'#e7d7e8' },
+  { id:'wool',  name:'шерсть', g:'f', short:'Шерсть', tribo: 2, color:'#d8c9a8' },
+  { id:'fur',   name:'мех',    g:'m', short:'Мех',    tribo: 5, color:'#c9a882' },
+  { id:'paper', name:'бумага', g:'f', short:'Бумага', tribo: 0, color:'#f0efe8' }
+];
+
+var MAX_PORTIONS = 6;
+var MAX_ANGLE = 74;      /* при этом угле кончик лепестка ещё внутри колбы */
+var CHARGE_SCALE = 4;    /* шкала сжимающая: стрелка не упирается в потолок */
+
+/* Угол лепестка. Линейная шкала насыщалась уже на 7 порциях: заряд рос,
+   текст обещал «сильнее», а стрелка стояла. Экспонента всегда даёт прирост. */
+function needleAngle(q){
+  return MAX_ANGLE * (1 - Math.exp(-Math.abs(q) / CHARGE_SCALE)) * Math.PI / 180;
+}
+
+function rubResult(rod, cloth){
+  var d = rod.tribo - cloth.tribo;                 /* >0: палочка отдаёт электроны */
+  if (d === 0) return { sign: 0, n: 0 };           /* одинаковые материалы не электризуются */
+  return { sign: d > 0 ? 1 : -1,
+           n: Math.max(1, Math.min(MAX_PORTIONS, Math.round(Math.abs(d) * 0.8))) };
+}
+
+/* ══════════════════ тексты ══════════════════ */
+
+function past(g, stem){ return g === 'f' ? stem + 'а' : stem; }
+function plural(n, one, few, many){
+  if (n % 10 === 1 && n % 100 !== 11) return one;
+  if ([2,3,4].indexOf(n % 10) >= 0 && [12,13,14].indexOf(n % 100) < 0) return few;
+  return many;
+}
+function electrons(n){ return n + ' ' + plural(n, 'электрон', 'электрона', 'электронов'); }
+
+/* Заряд называем через электроны, а не через «плюс/минус»: минус — это лишние
+   электроны, плюс — их нехватка. Ровно та мысль, ради которой демка делается. */
+function scopeState(q){
+  if (q === 0) return 'на электроскопе поровну зарядов';
+  var n = Math.abs(q);
+  return q < 0
+    ? 'на электроскопе <span class="neg">' + n + ' ' + plural(n, 'лишний', 'лишних', 'лишних') +
+      ' ' + plural(n, 'электрон', 'электрона', 'электронов') + '</span>'
+    : 'на электроскопе <span class="pos">не хватает ' + n + ' ' +
+      plural(n, 'электрона', 'электронов', 'электронов') + '</span>';
+}
+
+function rubText(rod, cloth, q){
+  var giver = q > 0 ? rod : cloth, taker = q > 0 ? cloth : rod;
+  var name = giver.name[0].toUpperCase() + giver.name.slice(1);
+  var n = Math.abs(q);
+  return name + ' ' + past(giver.g, 'отдал') + ' ' + electrons(n) + ', ' +
+         (n === 1 ? 'его ' : 'их ') + past(taker.g, 'забрал') + ' ' + taker.name + '. Палочка заряжена ' +
+         (q < 0 ? '<span class="neg">минусом</span>' : '<span class="pos">плюсом</span>') + '.';
+}
+
+/* Ветвимся по знаку ПРИНЕСЁННОГО заряда, а не итогового: иначе при частичном
+   гашении текст пишет «отклонилась сильнее», пока стрелка падает. */
+function touchText(before, after){
+  var dq = after - before, t;
+  var flew = dq < 0
+    ? 'Электроны перебежали с палочки на шар.'
+    : 'Электроны ушли с шара на палочку.';
+  if (before === 0) t = 'Стрелка отклонилась.';
+  else if (Math.sign(dq) === Math.sign(before)) t = 'Заряд того же знака. Стрелка отклонилась ещё сильнее.';
+  else if (after === 0) t = 'Заряды погасили друг друга ровно в ноль.';
+  else if (Math.sign(after) === Math.sign(before)) t = 'Часть заряда погасилась, стрелка опустилась.';
+  else t = 'Стрелка упала до нуля, а потом отклонилась снова: заряда хватило перевалить в другой знак.';
+  return flew + ' ' + t + ' Теперь ' + scopeState(after) + '.';
+}
+
+/* ══════════════════ геометрия сцены ══════════════════
+   Логические координаты 1000x430, canvas масштабируется под контейнер.
+   Колба круглая: стрелка при любом заряде остаётся внутри стекла. */
+
+var W = 1000, HGT = 430;
+var BULB = { x: 735, y: 258, r: 142 };          /* стеклянная колба */
+var PIVOT = { x: BULB.x, y: BULB.y - 78 };      /* подвес лепестка */
+var NEEDLE_LEN = 112;
+var LEG_BOTTOM = BULB.y + 62;                   /* неподвижная нога: от неё лепесток и отталкивается */
+var BALL = { x: BULB.x, y: 62, r: 25 };         /* шарик наверху */
+var RUB = { x: 250, y: 250 };
+
+function ease(t){ return t < .5 ? 2*t*t : 1 - Math.pow(-2*t + 2, 2) / 2; }
+
+/* ══════════════════ отрисовка ══════════════════ */
+
+/* Минус рисуем залитым кружком — это сам электрон, он же и летает.
+   Плюс рисуем пустым контуром: это не частица, а дырка, место ушедшего
+   электрона. Одинаковые кружки внушали бы, что летают ещё и «плюсы». */
+function drawSign(ctx, x, y, negative, scale){
+  scale = scale || 1;
+  ctx.save();
+  ctx.translate(x, y); ctx.scale(scale, scale);
+  ctx.beginPath(); ctx.arc(0, 0, 10, 0, 6.284);
+  if (negative) {
+    ctx.fillStyle = '#2e5fa3'; ctx.fill();
+    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-5, 0); ctx.lineTo(5, 0);
+    ctx.stroke();
+  } else {
+    ctx.fillStyle = '#fff'; ctx.fill();
+    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 2.2;
+    ctx.setLineDash([3, 2.6]); ctx.stroke(); ctx.setLineDash([]);
+    ctx.lineWidth = 2.6; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-5, 0); ctx.lineTo(5, 0);
+    ctx.moveTo(0, -5); ctx.lineTo(0, 5);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawScope(ctx, shownCharge, chargeSign, hideCharges){
+  var ang = needleAngle(shownCharge);
+
+  /* подставка */
+  ctx.beginPath();
+  ctx.moveTo(BULB.x - 62, BULB.y + BULB.r - 6);
+  ctx.lineTo(BULB.x + 62, BULB.y + BULB.r - 6);
+  ctx.lineTo(BULB.x + 48, BULB.y + BULB.r + 20);
+  ctx.lineTo(BULB.x - 48, BULB.y + BULB.r + 20);
+  ctx.closePath();
+  ctx.fillStyle = '#5c5c6b'; ctx.fill();
+
+  /* стеклянная колба */
+  ctx.beginPath(); ctx.arc(BULB.x, BULB.y, BULB.r, 0, 6.284);
+  ctx.fillStyle = 'rgba(226,238,244,.45)'; ctx.fill();
+  ctx.strokeStyle = '#b3c3cd'; ctx.lineWidth = 2.5; ctx.stroke();
+
+  /* горловина */
+  ctx.fillStyle = '#8a8a99';
+  ctx.fillRect(BULB.x - 26, BULB.y - BULB.r - 12, 52, 26);
+
+  /* Нога: неподвижный стержень от шарика вниз через всю колбу. Именно от неё
+     отталкивается лепесток — без неё картинка нефизична. */
+  ctx.strokeStyle = '#7b7b8c'; ctx.lineWidth = 10; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(BALL.x, BALL.y + 12); ctx.lineTo(BALL.x, LEG_BOTTOM); ctx.stroke();
+  ctx.beginPath(); ctx.arc(BALL.x, BALL.y, BALL.r, 0, 6.284);
+  ctx.fillStyle = '#8d8d9e'; ctx.fill();
+  ctx.strokeStyle = '#6f6f80'; ctx.lineWidth = 2; ctx.stroke();
+
+  /* подвижный лепесток на общем подвесе с ногой */
+  ctx.save();
+  ctx.translate(PIVOT.x, PIVOT.y); ctx.rotate(ang);
+  ctx.strokeStyle = '#3e2f8e'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, NEEDLE_LEN); ctx.stroke();
+  ctx.beginPath(); ctx.arc(0, NEEDLE_LEN, 8, 0, 6.284); ctx.fillStyle = '#3e2f8e'; ctx.fill();
+  ctx.restore();
+  ctx.beginPath(); ctx.arc(PIVOT.x, PIVOT.y, 7, 0, 6.284); ctx.fillStyle = '#3e2f8e'; ctx.fill();
+
+  /* Заряды сидят на шарике, на ноге и на лепестке. Одноимённые на ноге и на
+     лепестке расталкиваются — поэтому лепесток и отходит, это видно глазами. */
+  var n = Math.abs(Math.round(shownCharge));
+  if (!n || hideCharges) return;
+  var neg = chargeSign < 0;
+  var onLeaf = Math.max(1, Math.min(3, Math.floor(n / 3)));
+  var onLeg  = Math.max(1, Math.min(3, Math.floor(n / 3)));
+  var onBall = Math.max(1, Math.min(4, n - onLeaf - onLeg));
+
+  for (var i = 0; i < onBall; i++) {
+    var a = -1.15 + i * 0.62;                       /* веером справа: слева подъезжает палочка */
+    drawSign(ctx, BALL.x + Math.cos(a) * (BALL.r + 20),
+                  BALL.y + Math.sin(a) * (BALL.r + 20), neg, .82);
+  }
+  for (var k = 0; k < onLeg; k++)                   /* на ноге — справа, лепесток уходит влево */
+    drawSign(ctx, BALL.x + 17, PIVOT.y + 42 + k * 34, neg, .82);
+
+  ctx.save();
+  ctx.translate(PIVOT.x, PIVOT.y); ctx.rotate(ang);
+  for (var j = 0; j < onLeaf; j++)
+    drawSign(ctx, -16, 40 + j * 34, neg, .82);      /* на внешней стороне лепестка */
+  ctx.restore();
+}
+
+function drawRubStation(ctx, st){
+  if (st.cloth) {
+    var wob = st.phase === 'rub' ? Math.sin(st.t * Math.PI * 8) * 42 : 0;
+    var cx = RUB.x - 40 + wob, cy = RUB.y + 52;
+    ctx.save();
+    ctx.beginPath();
+    var x = cx - 46, y = cy - 24, w = 92, hh = 62, r = 10;
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + hh, r); ctx.arcTo(x + w, y + hh, x, y + hh, r);
+    ctx.arcTo(x, y + hh, x, y, r);         ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+    ctx.fillStyle = st.cloth.color; ctx.fill();
+    ctx.strokeStyle = 'rgba(0,0,0,.18)'; ctx.lineWidth = 2; ctx.stroke();
+    ctx.fillStyle = '#5b5b6b'; ctx.font = '16px system-ui, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(st.cloth.short, cx, cy + 58);
+    ctx.restore();
+
+    /* Заряд ткани: столько же, сколько у палочки, но с обратным знаком.
+       Без него электроны выглядели бы взявшимися из ниоткуда. */
+    var cq = Math.abs(st.clothCharge);
+    if (cq && st.phase !== 'rub') {
+      for (var m = 0; m < Math.min(cq, 4); m++)
+        drawSign(ctx, cx - 28 + (m % 2) * 56, cy - 6 + Math.floor(m / 2) * 30,
+                 st.clothCharge < 0, .78);
+    }
+  }
+  if (!st.rod) return;
+
+  /* положение палочки: у ткани → у шарика прибора */
+  var k = st.phase === 'approach' ? ease(st.t)
+        : st.phase === 'transfer' ? 1
+        : st.phase === 'retreat'  ? 1 - ease(st.t) : 0;
+  var px = RUB.x + (BALL.x - 168 - RUB.x) * k;
+  var py = RUB.y + (BALL.y + 4 - RUB.y) * k;
+  var pa = -0.12 * (1 - k);
+
+  ctx.save();
+  ctx.translate(px, py); ctx.rotate(pa);
+  ctx.beginPath();
+  var rx = -115, ry = -13, rw = 230, rh = 26, rr = 13;
+  ctx.moveTo(rx + rr, ry);
+  ctx.arcTo(rx + rw, ry, rx + rw, ry + rh, rr); ctx.arcTo(rx + rw, ry + rh, rx, ry + rh, rr);
+  ctx.arcTo(rx, ry + rh, rx, ry, rr);           ctx.arcTo(rx, ry, rx + rw, ry, rr);
+  ctx.closePath();
+  ctx.fillStyle = st.rod.body; ctx.fill();
+  ctx.strokeStyle = st.rod.edge; ctx.lineWidth = 2; ctx.stroke();
+
+  var q = Math.abs(st.rodCharge);
+  if (q && st.phase !== 'rub') {
+    for (var i = 0; i < q; i++) {
+      var t = q === 1 ? .5 : i / (q - 1);
+      drawSign(ctx, -85 + t * 170, -27, st.rodCharge < 0, .82);
+    }
+  }
+  ctx.restore();
+
+  if (st.phase === 'idle' || st.phase === 'rub') {
+    ctx.fillStyle = '#5b5b6b'; ctx.font = '16px system-ui, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(st.rod.short, px, py - 48);
+  }
+}
+
+function drawParts(ctx, parts){
+  parts.forEach(function(p){
+    if (p.t < 0 || p.t > 1) return;
+    var k = ease(Math.max(0, Math.min(1, p.t)));
+    drawSign(ctx, p.x0 + (p.x1 - p.x0) * k,
+                  p.y0 + (p.y1 - p.y0) * k - Math.sin(k * Math.PI) * 28, true, .82);
+  });
+}
+
+/* ══════════════════ компонент ══════════════════ */
+
+function Electroscope(){
+  var canvasRef = useRef(null);
+  var stRef = useRef({
+    rod: null, cloth: null, rodCharge: 0, clothCharge: 0, scopeCharge: 0,
+    shown: 0, pause: 0, chargeSign: 0,
+    phase: 'idle', t: 0, parts: [], pending: null, portion: 0
+  });
+  var st = stRef.current;
+
+  var [ui, setUi] = useState({ rod: null, cloth: null, phase: 'idle', rodCharge: 0, scopeCharge: 0 });
+  var [status, setStatus] = useState('Выберите палочку и материал.');
+
+  function syncUi(){
+    setUi({ rod: st.rod && st.rod.id, cloth: st.cloth && st.cloth.id,
+            phase: st.phase, rodCharge: st.rodCharge, scopeCharge: st.scopeCharge });
+  }
+
+  var busyNow = function(){ return st.phase !== 'idle'; };
+
+  function pick(key, item){
+    if (busyNow()) return;
+    st[key] = item;
+    st.rodCharge = 0; st.clothCharge = 0;      /* новая пара — старый заряд не в счёт */
+    setStatus(st.rod && st.cloth ? 'Что получится, если потереть? Спросите зал и жмите «Потереть».'
+             : st.rod ? 'Теперь выберите, обо что потереть.' : 'Выберите палочку.');
+    syncUi();
+  }
+
+  /* Трение отдельной кнопкой: иначе клик по материалу и есть показ,
+     и лектор не успевает спросить «что будет?». */
+  function rub(){
+    if (busyNow() || !st.rod || !st.cloth) return;
+    var r = rubResult(st.rod, st.cloth);
+    if (!r.n) { setStatus('Одинаковые материалы не электризуются. Возьмите другую пару.'); return; }
+    st.rodCharge = r.sign * r.n;
+    st.clothCharge = -st.rodCharge;
+    st.phase = 'rub'; st.t = 0;
+    /* частицы раскладываем по всей фазе, а не спавним случайно:
+       иначе перелёт заканчивается в первую секунду и дальше пустая тряска */
+    st.parts = [];
+    var toRod = st.rodCharge < 0;
+    for (var i = 0; i < r.n; i++) {
+      st.parts.push(toRod
+        ? { x0: RUB.x - 40, y0: RUB.y + 36, x1: RUB.x + 20, y1: RUB.y - 18, t: -i * 0.19, dir: 1 }
+        : { x0: RUB.x + 20, y0: RUB.y - 18, x1: RUB.x - 40, y1: RUB.y + 36, t: -i * 0.19, dir: 1 });
+    }
+    setStatus('Трём. Смотрите, куда перебегают электроны.');
+    syncUi();
+  }
+
+  function touch(){
+    if (busyNow() || !st.rodCharge) return;
+    st.phase = 'approach'; st.t = 0;
+    syncUi();
+  }
+
+  function ground(){
+    if (busyNow()) return;
+    st.scopeCharge = 0; st.pause = 0;
+    setStatus('Заряд ушёл в землю. Лепесток опустился. Палочка в руке осталась заряженной.');
+    syncUi();
+  }
+
+  useEffect(function(){
+    var raf, last = 0, alive = true;
+    var canvas = canvasRef.current, ctx = canvas.getContext('2d');
+    window.__demoState = st;   /* точка входа для отладки и автопроверок */
+
+    function frame(now){
+      if (!alive) return;
+      var dt = Math.min(0.05, (now - last) / 1000 || 0); last = now;
+      step(dt);
+      render(ctx, canvas);
+      raf = requestAnimationFrame(frame);
+    }
+    raf = requestAnimationFrame(function(t){ last = t; frame(t); });
+    return function(){ alive = false; cancelAnimationFrame(raf); };
+  }, []);
+
+  function step(dt){
+    /* Лепесток догоняет заряд ВСЕГДА, пауза тормозит только прилёт следующих
+       электронов. Иначе стрелка замирала на полпути к нулю, а не на самом нуле. */
+    if (st.pause > 0) st.pause -= dt;
+    var diff = st.scopeCharge - st.shown;
+    if (Math.abs(diff) < 0.02) st.shown = st.scopeCharge;
+    else {
+      st.shown += diff * Math.min(1, dt * 5);
+      if (Math.abs(st.shown) > 0.05) st.chargeSign = st.shown < 0 ? -1 : 1;
+    }
+
+    if (st.phase === 'rub') {
+      st.t += dt / 1.7;
+      st.parts.forEach(function(p){ p.t += dt / 0.6; });
+      if (st.t >= 1) {
+        st.phase = 'idle'; st.t = 0; st.parts = [];
+        setStatus(rubText(st.rod, st.cloth, st.rodCharge));
+        syncUi();
+      }
+    } else if (st.phase === 'approach') {
+      st.t += dt / 0.85;
+      if (st.t >= 1) {
+        st.t = 0; st.phase = 'transfer'; st.parts = [];
+        /* Заряд НЕ присваиваем разом: каждая долетевшая порция сама двинет
+           лепесток. Иначе следствие опережает причину на полсекунды. */
+        var neg = st.rodCharge < 0, rodX = BALL.x - 168, n = Math.abs(st.rodCharge);
+        st.portion = neg ? -1 : 1;                 /* знак одной порции заряда прибора */
+        for (var i = 0; i < n; i++) {
+          st.parts.push(neg
+            ? { x0: rodX + 70, y0: BALL.y - 20, x1: BALL.x - 14, y1: BALL.y, t: -i * 0.2, dir: 1 }
+            : { x0: BALL.x - 14, y0: BALL.y, x1: rodX + 70, y1: BALL.y - 20, t: -i * 0.2, dir: 1 });
+        }
+        st.pending = [st.scopeCharge, st.scopeCharge + st.rodCharge];
+        st.rodCharge = 0;   /* ткань свой заряд сохраняет: её никто не касался */
+      }
+    } else if (st.phase === 'transfer') {
+      st.t += dt / 1.9;
+      if (st.pause <= 0) {
+        st.parts.forEach(function(p){
+          p.t += dt / 0.6;
+          if (p.t >= 1 && !p.landed) {
+            p.landed = true;
+            st.scopeCharge += st.portion;            /* долетела порция — лепесток дёрнулся */
+            if (st.scopeCharge === 0 && st.parts.some(function(q){ return !q.landed; }))
+              st.pause = 0.8;                        /* замираем на нуле, пока летят остальные */
+          }
+        });
+      }
+      var allLanded = st.parts.every(function(p){ return p.landed; });
+      if (allLanded && st.t >= 0.75) {
+        st.phase = 'retreat'; st.t = 0; st.parts = [];
+        if (st.pending) { setStatus(touchText(st.pending[0], st.pending[1])); st.pending = null; }
+        syncUi();
+      }
+    } else if (st.phase === 'retreat') {
+      st.t += dt / 0.8;
+      if (st.t >= 1) { st.phase = 'idle'; st.t = 0; syncUi(); }
+    }
+  }
+
+  function render(ctx, canvas){
+    var rect = canvas.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    var dpr = window.devicePixelRatio || 1;
+    if (canvas.width !== Math.round(rect.width * dpr) || canvas.height !== Math.round(rect.height * dpr)) {
+      canvas.width = Math.round(rect.width * dpr);
+      canvas.height = Math.round(rect.height * dpr);
+    }
+    var s = Math.min(rect.width / W, rect.height / HGT);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.setTransform(dpr * s, 0, 0, dpr * s,
+                     (rect.width - W * s) / 2 * dpr, (rect.height - HGT * s) / 2 * dpr);
+
+    drawScope(ctx, st.shown, st.chargeSign, st.phase === 'transfer');
+    drawRubStation(ctx, st);
+    drawParts(ctx, st.parts);
+  }
+
+  var busy = ui.phase !== 'idle';   /* во время любой анимации кнопки молчат, а не глотают клики */
+
+  return html`
+    <div class="demo">
+      <div class="controls">
+        <div class="control-group">
+          <span class="control-label">Палочка:</span>
+          ${RODS.map(function(r){ return html`
+            <button key=${r.id} class=${'btn' + (ui.rod === r.id ? ' is-active' : '')}
+                    disabled=${busy} onClick=${function(){ pick('rod', r); }}>${r.short}</button>`; })}
+        </div>
+        <div class="control-group">
+          <span class="control-label">Потереть о:</span>
+          ${CLOTHS.map(function(c){ return html`
+            <button key=${c.id} class=${'btn' + (ui.cloth === c.id ? ' is-active' : '')}
+                    disabled=${busy} onClick=${function(){ pick('cloth', c); }}>${c.short}</button>`; })}
+        </div>
+        <div class="control-group">
+          <button class="btn btn-action" disabled=${busy || !ui.rod || !ui.cloth}
+                  onClick=${rub}>Потереть</button>
+          <button class="btn btn-action" disabled=${busy || !ui.rodCharge}
+                  onClick=${touch}>Коснуться электроскопа</button>
+          <button class="btn btn-action" disabled=${busy || !ui.scopeCharge}
+                  onClick=${ground}>Разрядить</button>
+        </div>
+      </div>
+      <canvas class="stage" ref=${canvasRef}></canvas>
+      <div class="status">
+        <span dangerouslySetInnerHTML=${{ __html: status }}></span>
+      </div>
+    </div>`;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(h(Electroscope));
+</script>
+</body>
+</html>

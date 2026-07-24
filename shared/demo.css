@@ -1,0 +1,90 @@
+/* Общие стили интерактивных демок.
+
+   Здесь СПЕЦИАЛЬНО нет инлайн-стилей в JS (как в старой коллекции Demo/):
+   весь вид демок задаётся классами и токенами в этом одном файле. Claude Design
+   на этапе оформления правит его — и меняются сразу все демки, а логика
+   и разметка компонентов не трогаются.
+
+   Токены дублируют палитру колоды: демка живёт в отдельном iframe и
+   переменные слайда до неё не долетают. */
+
+:root {
+  --bg: #ffffff;
+  --ink: #1b1b2f;
+  --muted: #6e6e80;
+  --accent: #3e2f8e;
+  --chip: #f2f0fb;
+  --minus: #2e5fa3;
+  --plus: #c0392b;
+  --radius: 10px;
+  --font: system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #root {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font);
+}
+
+.demo {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 14px 18px;
+  gap: 10px;
+}
+
+/* ---------- панель управления ---------- */
+
+.controls { display: flex; gap: 22px; flex-wrap: wrap; align-items: center; }
+.control-group { display: flex; align-items: center; gap: 8px; }
+.control-label { font-size: 15px; color: var(--muted); white-space: nowrap; }
+
+.btn {
+  font: inherit;
+  font-size: 16px;
+  padding: 8px 14px;
+  border-radius: var(--radius);
+  border: 2px solid var(--chip);
+  background: var(--chip);
+  color: var(--ink);
+  cursor: pointer;
+}
+.btn:hover:not(:disabled) { border-color: var(--accent); }
+.btn:disabled { opacity: .4; cursor: default; }
+.btn.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+
+.btn-action {
+  background: var(--bg);
+  border-color: var(--accent);
+  color: var(--accent);
+  font-weight: 600;
+}
+.btn-action:disabled { border-color: var(--chip); color: var(--muted); }
+
+/* ---------- сцена ---------- */
+
+.stage { flex: 1; min-height: 0; width: 100%; display: block; }
+
+/* ---------- статус ---------- */
+
+/* Текст статуса обязан лежать в одном span: прямые текстовые узлы во
+   flex-контейнере становятся отдельными flex-элементами, и пробелы между
+   ними схлопываются («10 зарядов минусом» слипается в «зарядовминусом»). */
+.status {
+  background: var(--chip);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  font-size: 17px;
+  line-height: 1.35;
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+}
+.status .neg { color: var(--minus); font-weight: 700; }
+.status .pos { color: var(--plus); font-weight: 700; }
+.status .accent { color: var(--accent); font-weight: 600; }
