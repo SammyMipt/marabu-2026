@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" role="img"
+     aria-label="Схема опыта: электронная пушка стреляет в стенку с двумя щелями, за ней экран">
+  <!-- Схема сцены для беата 3 «Электрона»: пушка, стенка с двумя щелями, экран.
+       Экран НАМЕРЕННО пуст, кроме одной свежей вспышки: картина накопления —
+       гвоздь следующих слайдов, здесь её быть не должно.
+       Пропорция 3:1 подобрана под блок image в колоде: при большей высоте
+       object-fit ужимает схему по ширине и подписи становятся нечитаемы.
+       Цвета продублированы из shared/theme/electron.css: <img> не наследует
+       CSS-переменные страницы. При редизайне править здесь, в блоке style. -->
+  <style>
+    svg { --ink:#1b1b2f; --accent:#3e2f8e; --muted:#6e6e80; --chip:#f2f0fb; }
+    .body   { fill: var(--chip);   stroke: var(--accent); stroke-width: 3; }
+    .metal  { fill: var(--accent); }
+    .screen { fill: var(--ink); }
+    .dot    { fill: var(--accent); }
+    .label  { fill: var(--ink); font-family: Cambria, Georgia, serif; font-size: 38px; text-anchor: middle; }
+    .tick   { stroke: var(--muted); stroke-width: 2; stroke-dasharray: 5 6; fill: none; }
+  </style>
+
+  <!-- ── пушка ─────────────────────────────────────────────── -->
+  <rect class="body" x="46" y="122" width="126" height="106" rx="10"/>
+  <path class="metal" d="M172 153 h44 a6 6 0 0 1 0 44 h-44 z"/>
+  <circle class="metal" cx="92" cy="175" r="13"/>
+  <path class="tick" d="M109 175 H160"/>
+
+  <!-- Один электрон, показанный следом: гаснущие копии — это он же
+       в предыдущие моменты. Двух одновременно в приборе не бывает,
+       и на схеме их быть не должно: на этом стоит весь беат. -->
+  <circle class="dot" cx="268" cy="172" r="9" opacity=".22"/>
+  <circle class="dot" cx="366" cy="166" r="9" opacity=".45"/>
+  <circle class="dot" cx="464" cy="160" r="9" opacity=".75"/>
+  <circle class="dot" cx="556" cy="154" r="9"/>
+
+  <!-- ── стенка с двумя щелями ─────────────────────────────── -->
+  <g class="metal">
+    <rect x="574" y="20"  width="26" height="112" rx="4"/>
+    <rect x="574" y="166" width="26" height="18"  rx="4"/>
+    <rect x="574" y="218" width="26" height="112" rx="4"/>
+  </g>
+
+  <!-- ── экран ─────────────────────────────────────────────── -->
+  <rect class="screen" x="936" y="20" width="34" height="310" rx="8"/>
+  <circle cx="953" cy="120" r="21" fill="#ffffff" opacity=".2"/>
+  <circle cx="953" cy="120" r="9" fill="#ffffff"/>
+
+  <!-- ── подписи ───────────────────────────────────────────── -->
+  <text class="label" x="109" y="378">пушка</text>
+  <text class="label" x="587" y="378">две щели</text>
+  <text class="label" x="953" y="378">экран</text>
+</svg>

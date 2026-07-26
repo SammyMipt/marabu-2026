@@ -73,7 +73,9 @@
           var v = el('video', 'video-frame');
           v.setAttribute('data-src', b.src); /* ленивая загрузка reveal */
           v.setAttribute('playsinline', '');
-          v.controls = true;
+          /* controls: false — когда кадр на паузе несёт смысл: Chrome держит
+             панель плеера показанной и она ложится поперёк кадра */
+          v.controls = b.controls !== false;
           v.muted = b.muted !== false;      /* по умолчанию без звука */
           if (b.autoplay) v.setAttribute('data-autoplay', ''); /* reveal запускает при показе слайда */
           if (b.poster) v.setAttribute('poster', b.poster);
