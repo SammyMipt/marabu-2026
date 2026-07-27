@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Длина волны де Бройля</title>
+<link rel="stylesheet" href="../shared/demo.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../shared/vendor/react.production.min.js"></script>
+<script src="../shared/vendor/react-dom.production.min.js"></script>
+<script src="../shared/vendor/htm.js"></script>
+<script src="../shared/demo-core.js"></script>
+<script>
+'use strict';
+var C = window.DemoCore, html = C.html;
+var useRef = React.useRef, useState = React.useState;
+
+var H = 6.6e-34;          /* постоянная Планка, как в плане лекции */
+var ATOM = 1e-10;         /* размер атома — точка отсчёта для зала */
+
+/* Пресеты и числа взяты из lekciya_elektron_plan.md, раздел «шпаргалка
+   по числам». Мяч и человек должны давать ровно те порядки, что лектор
+   называет вслух: 10⁻³⁴ и 10⁻³⁶ метра. */
+var PRESETS = [
+  { id:'ball',   label:'Мяч',      m:0.145,   v:40,      hint:'брошенный мяч, 145 граммов' },
+  { id:'human',  label:'Человек',  m:30,      v:5,       hint:'бегущий школьник' },
+  { id:'dust',   label:'Пылинка',  m:1e-12,   v:0.001,   hint:'пылинка в луче света' },
+  { id:'electron', label:'Электрон', m:9.1e-31, v:7.3e6, hint:'электрон в трубке' }
+];
+
+/* Опорные масштабы для логарифмической линейки */
+var MARKS = [
+  { x:1e-15, t:'ядро' },
+  { x:1e-10, t:'атом' },
+  { x:1e-7,  t:'вирус' },
+  { x:1e-4,  t:'волос' },
+  { x:1,     t:'метр' }
+];
+var LO = 1e-36, HI = 1e2;
+
+function fmtPow(v){
+  if (!isFinite(v) || v <= 0) return '—';
+  var e = Math.floor(Math.log10(v)), m = v / Math.pow(10, e);
+  var sup = String(e).replace(/-/g, '⁻').replace(/[0-9]/g, function(d){
+    return '⁰¹²³⁴⁵⁶⁷⁸⁹'[+d];
+  });
+  return (Math.round(m * 10) / 10) + ' · 10' + sup + ' м';
+}
+/* «во столько раз меньше атома» — так порядок читается детьми,
+   а не как отвлечённая степень десяти */
+function timesSmaller(lam){
+  var k = ATOM / lam;
+  if (k < 1) return 'больше атома в ' + fmtShort(1 / k) + ' раз';
+  return 'меньше атома в ' + fmtShort(k) + ' раз';
+}
+function fmtShort(k){
+  var e = Math.floor(Math.log10(k));
+  if (e < 4) return String(Math.round(k));
+  return '10' + String(e).replace(/[0-9]/g, function(d){ return '⁰¹²³⁴⁵⁶⁷⁸⁹'[+d]; });
+}
+
+var W = 1000, HGT = 430;
+var AX = { x0: 90, x1: 930, y: 250 };
+
+function toX(v){
+  var t = (Math.log10(v) - Math.log10(LO)) / (Math.log10(HI) - Math.log10(LO));
+  return AX.x0 + C.clamp(t, 0, 1) * (AX.x1 - AX.x0);
+}
+
+function DeBroyl(){
+  var st = useRef({ m: 0.145, v: 40, preset: 'ball', pulse: 0 }).current;
+  var [ui, setUi] = useState({ m: 0.145, v: 40, preset: 'ball' });
+
+  function apply(m, v, preset){
+    st.m = m; st.v = v; st.preset = preset || null; st.pulse = 1;
+    setUi({ m: m, v: v, preset: st.preset });
+  }
+
+  var lam = H / (st.m * st.v);
+
+  function step(dt){ if (st.pulse > 0) st.pulse -= dt * 1.6; }
+
+  function draw(ctx){
+    var lambda = H / (st.m * st.v);
+
+    /* ── логарифмическая линейка ── */
+    ctx.strokeStyle = '#b9b9c6'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(AX.x0, AX.y); ctx.lineTo(AX.x1, AX.y); ctx.stroke();
+
+    /* декады */
+    ctx.strokeStyle = '#e4e4ec'; ctx.lineWidth = 1.5;
+    for (var e = -36; e <= 2; e += 2) {
+      var x = toX(Math.pow(10, e));
+      ctx.beginPath(); ctx.moveTo(x, AX.y - 7); ctx.lineTo(x, AX.y + 7); ctx.stroke();
+    }
+
+    /* опорные объекты */
+    MARKS.forEach(function(mk){
+      var x = toX(mk.x);
+      ctx.strokeStyle = '#a9a9bb'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(x, AX.y - 16); ctx.lineTo(x, AX.y + 16); ctx.stroke();
+      C.label(ctx, x, AX.y + 40, mk.t, 17, '#6e6e80');
+    });
+
+    /* ── маркер длины волны ── */
+    var lx = toX(lambda);
+    var outLeft = lambda < LO;
+    ctx.save();
+    if (st.pulse > 0) {
+      ctx.beginPath(); ctx.arc(lx, AX.y - 62, 26 + 26 * st.pulse, 0, 6.284);
+      ctx.fillStyle = 'rgba(62,47,142,' + (0.16 * st.pulse) + ')'; ctx.fill();
+    }
+    ctx.strokeStyle = '#3e2f8e'; ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.moveTo(lx, AX.y - 88); ctx.lineTo(lx, AX.y - 4); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(lx, AX.y - 2); ctx.lineTo(lx - 9, AX.y - 20); ctx.lineTo(lx + 9, AX.y - 20);
+    ctx.closePath(); ctx.fillStyle = '#3e2f8e'; ctx.fill();
+    ctx.restore();
+
+    ctx.fillStyle = '#3e2f8e';
+    ctx.font = '600 26px system-ui, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(outLeft ? 'ещё левее шкалы' : fmtPow(lambda), lx, AX.y - 102);
+
+    /* ── вывод: видна волна или нет ── */
+    /* Волновые эффекты заметны, когда длина волны дотягивает до размеров,
+       на которых есть препятствия: щели, атомы, кристаллическая решётка. */
+    var visible = lambda > 1e-12;
+    ctx.textAlign = 'center';
+    ctx.font = '600 27px system-ui, sans-serif';
+    ctx.fillStyle = visible ? '#2e5fa3' : '#6e6e80';
+    ctx.fillText(visible ? 'волна такого размера — её видно' : 'волна есть, но её никак не заметить',
+                 (AX.x0 + AX.x1) / 2, AX.y + 108);
+    ctx.font = '21px system-ui, sans-serif';
+    ctx.fillStyle = '#6e6e80';
+    ctx.fillText(timesSmaller(lambda), (AX.x0 + AX.x1) / 2, AX.y + 146);
+
+    /* формула с подставленными числами */
+    ctx.font = '22px system-ui, sans-serif';
+    ctx.fillStyle = '#1b1b2f';
+    ctx.fillText('λ = h / (m · v)', (AX.x0 + AX.x1) / 2, 64);
+  }
+
+  var ref = C.useStage(W, HGT, step, draw);
+  window.__demoState = st;
+
+  return html`
+    <div class="demo">
+      <div class="controls">
+        <${C.Group} label="Кто летит:">
+          ${PRESETS.map(function(p){ return html`
+            <${C.Btn} key=${p.id} active=${ui.preset === p.id}
+                      onClick=${function(){ apply(p.m, p.v, p.id); }}>${p.label}<//>`; })}
+        <//>
+        <${C.Slider} label="Масса:" log=${true} min=${1e-31} max=${100}
+                     value=${ui.m} onChange=${function(v){ apply(v, st.v, null); }}
+                     display=${ui.m >= 0.001 ? ui.m.toPrecision(2) + ' кг' : fmtPow(ui.m).replace(' м',' кг')} />
+        <${C.Slider} label="Скорость:" log=${true} min=${0.001} max=${1e7}
+                     value=${ui.v} onChange=${function(v){ apply(st.m, v, null); }}
+                     display=${ui.v >= 1 ? Math.round(ui.v).toLocaleString('ru') + ' м/с' : ui.v.toPrecision(2) + ' м/с'} />
+      </div>
+      <canvas class="stage" ref=${ref}></canvas>
+      <${C.Status} html=${
+        'Тяжелее и быстрее — волна короче. У мяча она в триллионы триллионов раз мельче атома, ' +
+        'поэтому в дверном проёме мы не расплываемся. У электрона выходит как раз размер атома — вот её и видно.'} />
+    </div>`;
+}
+
+C.mount(DeBroyl);
+</script>
+</body>
+</html>

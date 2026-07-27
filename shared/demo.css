@@ -66,6 +66,42 @@ html, body, #root {
 }
 .btn-action:disabled { border-color: var(--chip); color: var(--muted); }
 
+/* ---------- ползунок ---------- */
+
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 190px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--chip);
+  outline: none;
+  cursor: pointer;
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+.slider::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--accent);
+  cursor: pointer;
+}
+.control-value {
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+  color: var(--ink);
+  min-width: 74px;
+}
+
 /* ---------- сцена ---------- */
 
 .stage { flex: 1; min-height: 0; width: 100%; display: block; }

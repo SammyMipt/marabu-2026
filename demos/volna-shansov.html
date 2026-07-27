@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Волна шансов</title>
+<link rel="stylesheet" href="../shared/demo.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../shared/vendor/react.production.min.js"></script>
+<script src="../shared/vendor/react-dom.production.min.js"></script>
+<script src="../shared/vendor/htm.js"></script>
+<script src="../shared/demo-core.js"></script>
+<script>
+'use strict';
+var C = window.DemoCore, html = C.html;
+var useRef = React.useRef, useState = React.useState;
+
+/* ══════════════════════════════════════════════════════════════
+   Три сцены одной мысли: волна шансов, из неё полосы, из неё же
+   облако вокруг ядра. Показываем подряд, чтобы зал увидел, что это
+   не три разных объяснения, а одно и то же правило в трёх местах:
+   где волна сильная — туда попадает часто.
+
+   Точки всюду сыплются НЕ по кривой, а выбираются из неё случайно:
+   кривая это шансы, а не траектория. На этом стоит весь беат.
+   ══════════════════════════════════════════════════════════════ */
+
+var W = 1000, HGT = 430;
+var SCENES = [
+  { id:'wave',   label:'Волна шансов' },
+  { id:'slits',  label:'Полосы на экране' },
+  { id:'cloud',  label:'Облако вокруг ядра' }
+];
+
+/* ── сцена 1: один горб, точки сыплются под ним ── */
+var W1 = { x0: 120, x1: 880, base: 300, amp: 170, sigma: 118 };
+function pdfBell(x){ var t = x / W1.sigma; return Math.exp(-t * t); }
+
+/* ── сцена 2: те же шансы, но с интерференцией ── */
+var ENV = 300, PER = 66;
+function sinc2(u){ if (Math.abs(u) < 1e-6) return 1; var s = Math.sin(u) / u; return s * s; }
+function pdfFringes(x){ return sinc2(Math.PI * x / ENV) * (1 + Math.cos(2 * Math.PI * x / PER)); }
+
+/* ── сцена 3: облако 1s вокруг ядра ── */
+var A0 = 74;                                   /* «боровский радиус» в пикселях сцены */
+function pdfRadial(r){ var t = r / A0; return t * t * Math.exp(-2 * t); }   /* r²|ψ|² */
+
+function VolnaShansov(){
+  var st = useRef({
+    scene: 0, running: true, rate: 60, spawn: 0,
+    pts: [], curveOnly: false, t: 0
+  }).current;
+
+  var [ui, setUi] = useState({ scene: 0, running: true, curveOnly: false, count: 0 });
+  var [status, setStatus] = useState(
+    'Волна шансов не говорит, куда электрон полетит. Она говорит, куда он попадает часто, а куда почти никогда.');
+
+  function sync(){ setUi({ scene: st.scene, running: st.running, curveOnly: st.curveOnly, count: st.pts.length }); }
+
+  function goScene(i){
+    st.scene = i; st.pts = []; st.spawn = 0; st.t = 0;
+    setStatus([
+      'Волна шансов не говорит, куда электрон полетит. Она говорит, куда он попадает часто, а куда почти никогда.',
+      'Те же шансы, но волна прошла через две щели и сложилась сама с собой. Где шансы сложились — попаданий много, где погасили друг друга — нет совсем.',
+      'Тот же закон в атоме. Электрон не бегает по орбите: он размазан в облако шансов вокруг ядра.'
+    ][i]);
+    sync();
+  }
+
+  function addPoint(){
+    if (st.scene === 0) {
+      var x = C.sampleFrom(pdfBell, -380, 380, 1);
+      st.pts.push({ x: x, y: 0, age: 0 });
+    } else if (st.scene === 1) {
+      var x2 = C.sampleFrom(pdfFringes, -300, 300, 2);
+      st.pts.push({ x: x2, y: (Math.random() - 0.5) * 250, age: 0 });
+    } else {
+      /* радиус из r²|ψ|², направление равномерно по кругу */
+      var r = C.sampleFrom(pdfRadial, 0, A0 * 6, 0.55);
+      var a = Math.random() * 6.284;
+      st.pts.push({ x: Math.cos(a) * r, y: Math.sin(a) * r, age: 0 });
+    }
+    if (st.pts.length > 2600) st.pts.shift();
+  }
+
+  function step(dt){
+    st.t += dt;
+    st.pts.forEach(function(p){ if (p.age < 1) p.age += dt * 3; });
+    if (!st.running || st.curveOnly) return;
+    st.spawn += st.rate * dt;
+    while (st.spawn >= 1) { st.spawn -= 1; addPoint(); }
+  }
+
+  /* ── отрисовка ── */
+
+  function drawCurve(ctx, pdf, x0, x1, base, amp, scale){
+    ctx.beginPath();
+    for (var x = x0; x <= x1; x += 3) {
+      var v = pdf((x - (x0 + x1) / 2) / (scale || 1));
+      var y = base - v * amp;
+      x === x0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+    }
+    ctx.strokeStyle = '#3e2f8e'; ctx.lineWidth = 3.5; ctx.stroke();
+    ctx.lineTo(x1, base); ctx.lineTo(x0, base); ctx.closePath();
+    ctx.fillStyle = 'rgba(62,47,142,.10)'; ctx.fill();
+  }
+
+  function draw(ctx){
+    var cx = (W1.x0 + W1.x1) / 2;
+
+    if (st.scene === 0) {
+      drawCurve(ctx, pdfBell, W1.x0, W1.x1, W1.base, W1.amp, 1);
+      C.label(ctx, cx, 92, 'волна шансов', 20, '#3e2f8e');
+      /* попадания складываем в столбик под кривой */
+      st.pts.forEach(function(p){
+        var a = Math.min(1, p.age);
+        ctx.fillStyle = 'rgba(46,95,163,' + (0.35 + 0.5 * a) + ')';
+        ctx.beginPath();
+        ctx.arc(cx + p.x, W1.base + 22 + (p.y || 0), 3 + (1 - a) * 4, 0, 6.284);
+        ctx.fill();
+      });
+      /* гистограмма набранного */
+      drawHist(ctx, cx, W1.base + 96, 760, 78, -380, 380);
+      C.label(ctx, cx, W1.base + 120, 'куда попали на самом деле', 16, '#6e6e80');
+
+    } else if (st.scene === 1) {
+      drawCurve(ctx, pdfFringes, cx - 300, cx + 300, 210, 78, 1);
+      C.label(ctx, cx, 70, 'шансы сложились сами с собой', 20, '#3e2f8e');
+      /* экран */
+      C.roundRect(ctx, cx - 330, 250, 660, 150, 10);
+      ctx.fillStyle = '#14141f'; ctx.fill();
+      st.pts.forEach(function(p){
+        var a = Math.min(1, p.age);
+        ctx.fillStyle = 'rgba(233,233,255,' + (0.5 + 0.5 * a) + ')';
+        ctx.beginPath();
+        ctx.arc(cx + p.x, 325 + p.y * 0.52, 2.4 + (1 - a) * 4, 0, 6.284);
+        ctx.fill();
+      });
+
+    } else {
+      var ox = cx, oy = 214;
+      /* ядро */
+      ctx.beginPath(); ctx.arc(ox, oy, 9, 0, 6.284);
+      ctx.fillStyle = '#c0392b'; ctx.fill();
+      /* попадания-облако */
+      st.pts.forEach(function(p){
+        var a = Math.min(1, p.age);
+        ctx.fillStyle = 'rgba(46,95,163,' + (0.28 + 0.42 * a) + ')';
+        ctx.beginPath(); ctx.arc(ox + p.x, oy + p.y, 2.6 + (1 - a) * 4, 0, 6.284); ctx.fill();
+      });
+      C.label(ctx, ox, oy - 168, 'облако шансов', 20, '#3e2f8e');
+      C.label(ctx, ox + 22, oy + 5, 'ядро', 15, '#c0392b', 'left');
+      /* кольцо самого вероятного радиуса */
+      ctx.setLineDash([6, 7]); ctx.strokeStyle = 'rgba(62,47,142,.45)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(ox, oy, A0, 0, 6.284); ctx.stroke(); ctx.setLineDash([]);
+      C.label(ctx, ox, oy + A0 + 26, 'чаще всего электрон находят здесь', 16, '#6e6e80');
+    }
+
+    ctx.textAlign = 'right';
+    ctx.fillStyle = '#6e6e80'; ctx.font = '600 19px system-ui, sans-serif';
+    ctx.fillText('попаданий: ' + st.pts.length, W - 40, 40);
+    ctx.textAlign = 'center';
+  }
+
+  function drawHist(ctx, cx, base, width, height, lo, hi){
+    var bins = 48, h = new Array(bins).fill(0);
+    st.pts.forEach(function(p){
+      var i = Math.floor((p.x - lo) / (hi - lo) * bins);
+      if (i >= 0 && i < bins) h[i]++;
+    });
+    var mx = Math.max.apply(null, h) || 1, bw = width / bins;
+    for (var i = 0; i < bins; i++) {
+      var bh = h[i] / mx * height;
+      ctx.fillStyle = 'rgba(46,95,163,.55)';
+      ctx.fillRect(cx - width / 2 + i * bw + 1, base - bh, bw - 2, bh);
+    }
+  }
+
+  var ref = C.useStage(W, HGT, step, draw);
+  window.__demoState = st;
+
+  return html`
+    <div class="demo">
+      <div class="controls">
+        <${C.Group} label="Шаг:">
+          ${SCENES.map(function(s, i){ return html`
+            <${C.Btn} key=${s.id} active=${ui.scene === i} onClick=${function(){ goScene(i); }}>${s.label}<//>`; })}
+        <//>
+        <${C.Group}>
+          <${C.Btn} action=${true} onClick=${function(){ st.running = !st.running; sync(); }}>
+            ${ui.running ? 'Пауза' : 'Пуск'}<//>
+          <${C.Btn} onClick=${function(){ st.pts = []; sync(); }}>Сброс<//>
+          <${C.Btn} active=${ui.curveOnly}
+                    onClick=${function(){ st.curveOnly = !st.curveOnly; sync(); }}>Только волна<//>
+        <//>
+      </div>
+      <canvas class="stage" ref=${ref}></canvas>
+      <${C.Status} html=${status} />
+    </div>`;
+}
+
+C.mount(VolnaShansov);
+</script>
+</body>
+</html>

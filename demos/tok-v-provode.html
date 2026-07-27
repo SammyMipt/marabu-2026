@@ -1,0 +1,342 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ток в проводе — кто тронется первым</title>
+<link rel="stylesheet" href="../shared/demo.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../shared/vendor/react.production.min.js"></script>
+<script src="../shared/vendor/react-dom.production.min.js"></script>
+<script src="../shared/vendor/htm.js"></script>
+<script src="../shared/demo-core.js"></script>
+<script>
+'use strict';
+var C = window.DemoCore, html = C.html;
+var useRef = React.useRef, useState = React.useState;
+
+/* ══════════════════ трек: замкнутая цепь ══════════════════
+
+   Контур — прямоугольник со скруглёнными углами. Электрон живёт в двух
+   координатах: s вдоль контура (замыкается по модулю периметра, так что
+   он реально едет по кругу, а не телепортируется с края на край) и r
+   поперёк, в пределах толщины провода.
+
+   Параметризацию пишем руками, а не через SVG getPointAtLength: так она
+   детерминирована и не зависит от того, вставлен ли элемент в документ. */
+
+var W = 1000, HGT = 430;
+var X0 = 150, X1 = 850, Y0 = 96, Y1 = 336, RAD = 46;
+var HALF = 21;                       /* половина толщины провода */
+
+var SEGS = (function(){
+  var hx = X1 - X0 - 2 * RAD, vy = Y1 - Y0 - 2 * RAD, arc = Math.PI * RAD / 2;
+  return [
+    { kind:'line', len:hx,  x:X0+RAD, y:Y0,     dx: 1, dy: 0 },              /* верх, вправо */
+    { kind:'arc',  len:arc, cx:X1-RAD, cy:Y0+RAD, a0:-Math.PI/2, a1:0 },
+    { kind:'line', len:vy,  x:X1,     y:Y0+RAD, dx: 0, dy: 1 },              /* право, вниз */
+    { kind:'arc',  len:arc, cx:X1-RAD, cy:Y1-RAD, a0:0, a1:Math.PI/2 },
+    { kind:'line', len:hx,  x:X1-RAD, y:Y1,     dx:-1, dy: 0 },              /* низ, влево */
+    { kind:'arc',  len:arc, cx:X0+RAD, cy:Y1-RAD, a0:Math.PI/2, a1:Math.PI },
+    { kind:'line', len:vy,  x:X0,     y:Y1-RAD, dx: 0, dy:-1 },              /* лево, вверх */
+    { kind:'arc',  len:arc, cx:X0+RAD, cy:Y0+RAD, a0:Math.PI, a1:Math.PI*1.5 }
+  ];
+})();
+var PERIM = SEGS.reduce(function(a, s){ return a + s.len; }, 0);
+
+/* точка на контуре: координаты и наружная нормаль */
+function onPath(s){
+  s = ((s % PERIM) + PERIM) % PERIM;
+  for (var i = 0; i < SEGS.length; i++) {
+    var g = SEGS[i];
+    if (s > g.len) { s -= g.len; continue; }
+    if (g.kind === 'line') {
+      /* нормаль наружу: (dy, −dx). У дуг она тоже наружная (cos a, sin a),
+         и знаки обязаны совпадать, иначе на стыке прямая↔дуга электрон
+         перепрыгивает на другую стенку провода. */
+      return { x: g.x + g.dx * s, y: g.y + g.dy * s, nx: g.dy, ny: -g.dx };
+    }
+    var a = g.a0 + (g.a1 - g.a0) * (s / g.len);
+    return { x: g.cx + Math.cos(a) * RAD, y: g.cy + Math.sin(a) * RAD,
+             nx: Math.cos(a), ny: Math.sin(a) };
+  }
+  return { x: X0, y: Y0, nx: 0, ny: -1 };
+}
+
+/* приборы стоят НА контуре, в своих точках s */
+var S_BATT   = SEGS[0].len + SEGS[1].len + SEGS[2].len + SEGS[3].len + SEGS[4].len +
+               SEGS[5].len + SEGS[6].len * 0.5;                    /* середина левой стороны */
+var S_LAMP   = SEGS[0].len + SEGS[1].len + SEGS[2].len * 0.5;      /* середина правой */
+var S_SWITCH = SEGS[0].len * 0.52;                                 /* на верхней стороне */
+
+var V_TH = 74;
+var ACCEL = 460;
+var COLLIDE_R = 20;
+
+function makeAtoms(){
+  var a = [], step = 46;
+  for (var s = 18; s < PERIM; s += step) {
+    /* пропускаем места, где стоят приборы */
+    var near = [S_BATT, S_LAMP, S_SWITCH].some(function(sp){
+      var d = Math.abs(((s - sp + PERIM * 1.5) % PERIM) - PERIM * 0.5);
+      return Math.abs(d - PERIM * 0.5) < 46;
+    });
+    if (near) continue;
+    var p = onPath(s), r = (a.length % 2 ? 1 : -1) * 10;
+    a.push({ s: s, r: r, x: p.x + p.nx * r, y: p.y + p.ny * r, jitter: 0 });
+  }
+  return a;
+}
+
+function makeElectrons(){
+  var e = [];
+  for (var i = 0; i < 30; i++) {
+    e.push({
+      s: Math.random() * PERIM,
+      r: (Math.random() * 2 - 1) * (HALF - 6),
+      vs: (Math.random() * 2 - 1) * V_TH,
+      vr: (Math.random() * 2 - 1) * V_TH * 0.5,
+      flash: 0, cool: 0
+    });
+  }
+  return e;
+}
+
+/* ══════════════════ компонент ══════════════════ */
+
+function TokVProvode(){
+  var st = useRef({
+    on: false, volts: 1.4,
+    atoms: makeAtoms(), electrons: makeElectrons(),
+    heat: 0, current: 0, justClosed: 0
+  }).current;
+
+  var [ui, setUi] = useState({ on: false, volts: 1.4 });
+  var [status, setStatus] = useState(
+    'Цепь разомкнута. Электроны на месте и толкутся без толку. ' +
+    'Спросите зал: кто тронется первым, когда включим?');
+
+  function toggle(){
+    st.on = !st.on;
+    if (st.on) {
+      st.justClosed = 1.6;
+      setStatus('Тронулись <b>все разом</b> по всему кольцу — и у батарейки, и у лампочки. ' +
+                'Поле бежит по проводу мгновенно и толкает сразу всех.');
+    } else {
+      setStatus('Цепь разомкнута. Дрейф прекратился, осталась тепловая пляска.');
+    }
+    setUi({ on: st.on, volts: st.volts });
+  }
+
+  function setVolts(v){
+    st.volts = v;
+    setUi({ on: st.on, volts: v });
+    if (st.on) {
+      setStatus(v > 2.2
+        ? 'Сильнее поле — быстрее дрейф, чаще удары об атомы. Провод греется, спираль ярче.'
+        : 'Дрейф медленный: между ударами электрон успевает разогнаться совсем чуть-чуть.');
+    }
+  }
+
+  function step(dt){
+    if (st.justClosed > 0) st.justClosed -= dt;
+    var a = st.on ? ACCEL * st.volts : 0;
+    var hits = 0;
+
+    st.electrons.forEach(function(e){
+      if (e.flash > 0) e.flash -= dt * 3;
+
+      e.vs += a * dt;                       /* поле гонит вдоль провода */
+      e.s += e.vs * dt;
+      e.r += e.vr * dt;
+
+      /* стенки провода */
+      if (e.r > HALF - 5) { e.r = HALF - 5; e.vr = -Math.abs(e.vr); }
+      if (e.r < -(HALF - 5)) { e.r = -(HALF - 5); e.vr = Math.abs(e.vr); }
+
+      /* разомкнутый выключатель — стенка: дальше электронам хода нет */
+      if (!st.on) {
+        var gap = ((e.s - S_SWITCH + PERIM * 1.5) % PERIM) - PERIM * 0.5;
+        if (Math.abs(gap) < 16) {
+          e.s = S_SWITCH + (gap > 0 ? 16 : -16);
+          e.vs = -e.vs;
+        }
+      }
+
+      e.s = ((e.s % PERIM) + PERIM) % PERIM;   /* замкнутый контур, без телепортаций */
+
+      var p = onPath(e.s);
+      e.x = p.x + p.nx * e.r;
+      e.y = p.y + p.ny * e.r;
+
+      /* Модель Друде: между ударами разгон полем, при ударе скорость
+         сбрасывается на тепловую, а набранная энергия греет решётку. */
+      if (e.cool > 0) { e.cool -= dt; return; }
+      for (var i = 0; i < st.atoms.length; i++) {
+        var at = st.atoms[i];
+        var dx = e.x - at.x, dy = e.y - at.y;
+        if (dx * dx + dy * dy < COLLIDE_R * COLLIDE_R) {
+          var gained = Math.max(0, e.vs - V_TH);
+          var ang = Math.random() * 6.284;
+          e.vs = Math.cos(ang) * V_TH;
+          e.vr = Math.sin(ang) * V_TH * 0.5;
+          e.s += Math.cos(ang) * 3;
+          e.cool = 0.18;
+          e.flash = 1;
+          at.jitter = Math.min(1, at.jitter + 0.12 + gained / 260);
+          hits += gained / 150;
+          break;
+        }
+      }
+    });
+
+    st.atoms.forEach(function(at){ if (at.jitter > 0) at.jitter -= dt * 1.4; });
+
+    var hitRate = dt > 0 ? hits / dt : 0;
+    st.heat += (hitRate * 0.005 - st.heat) * Math.min(1, dt / 0.7);
+    if (st.heat < 0) st.heat = 0;
+
+    var drift = 0;
+    st.electrons.forEach(function(e){ drift += e.vs; });
+    st.current += (Math.max(0, drift / st.electrons.length) - st.current) * Math.min(1, dt * 2.5);
+  }
+
+  function draw(ctx){
+    var heat = C.clamp(st.heat, 0, 1);
+
+    /* ── провод: замкнутое кольцо, цвет теплеет от ударов ── */
+    function ring(width, style){
+      ctx.beginPath();
+      ctx.moveTo(X0 + RAD, Y0);
+      ctx.arcTo(X1, Y0, X1, Y0 + RAD, RAD);
+      ctx.arcTo(X1, Y1, X1 - RAD, Y1, RAD);
+      ctx.arcTo(X0, Y1, X0, Y1 - RAD, RAD);
+      ctx.arcTo(X0, Y0, X0 + RAD, Y0, RAD);
+      ctx.closePath();
+      ctx.lineWidth = width; ctx.strokeStyle = style; ctx.stroke();
+    }
+    ring(HALF * 2 + 6, heat > 0.35 ? 'rgba(192,57,43,' + (0.35 + heat * 0.5) + ')' : '#b9b9c6');
+    ring(HALF * 2, 'rgb(' + Math.round(232 + 20 * heat) + ',' +
+                            Math.round(232 - 76 * heat) + ',' +
+                            Math.round(238 - 150 * heat) + ')');
+
+    /* ── атомы решётки ── */
+    st.atoms.forEach(function(at){
+      var j = Math.max(0, at.jitter);
+      var ox = (Math.random() - 0.5) * j * 7, oy = (Math.random() - 0.5) * j * 7;
+      ctx.beginPath(); ctx.arc(at.x + ox, at.y + oy, 11, 0, 6.284);
+      ctx.fillStyle = j > 0.05 ? 'rgba(192,57,43,' + (0.35 + j * 0.5) + ')' : '#a9a9bb';
+      ctx.fill();
+    });
+
+    /* ── электроны ── */
+    st.electrons.forEach(function(e){
+      if (e.flash > 0) {
+        ctx.beginPath(); ctx.arc(e.x, e.y, 16, 0, 6.284);
+        ctx.fillStyle = 'rgba(192,57,43,' + (0.28 * e.flash) + ')'; ctx.fill();
+      }
+      C.electron(ctx, e.x, e.y, 0.78);
+    });
+
+    /* стрелки «тронулись все разом» */
+    if (st.justClosed > 0) {
+      var k = C.clamp(st.justClosed / 1.6, 0, 1);
+      ctx.strokeStyle = 'rgba(62,47,142,' + k + ')'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      st.electrons.forEach(function(e){
+        /* касательная из наружной нормали: t = (−ny, nx), это и есть
+           направление роста s, то есть направление движения электронов */
+        var p = onPath(e.s), tx = -p.ny, ty = p.nx;
+        var bx = e.x + p.nx * 22, by = e.y + p.ny * 22;
+        ctx.beginPath();
+        ctx.moveTo(bx - tx * 9, by - ty * 9);
+        ctx.lineTo(bx + tx * 9, by + ty * 9);
+        ctx.lineTo(bx + tx * 4 - p.nx * 4, by + ty * 4 - p.ny * 4);
+        ctx.moveTo(bx + tx * 9, by + ty * 9);
+        ctx.lineTo(bx + tx * 4 + p.nx * 4, by + ty * 4 + p.ny * 4);
+        ctx.stroke();
+      });
+    }
+
+    /* ── батарейка на левой стороне ── */
+    var pb = onPath(S_BATT);
+    ctx.save();
+    ctx.translate(pb.x, pb.y);
+    C.roundRect(ctx, -30, -46, 60, 92, 9);
+    ctx.fillStyle = '#f2f0fb'; ctx.fill();
+    ctx.strokeStyle = '#3e2f8e'; ctx.lineWidth = 3; ctx.stroke();
+    /* Электроны обходят контур по часовой и выходят из батарейки ВВЕРХ,
+       поэтому вверху минус: во внешней цепи они идут от «−» к «+».
+       Внутри самой батарейки их гонит химия, против поля — так и надо. */
+    C.label(ctx, 0, -14, '−', 30, '#3e2f8e');
+    C.label(ctx, 0, 34, '+', 30, '#3e2f8e');
+    ctx.restore();
+    C.label(ctx, pb.x - 78, pb.y + 6, 'батарейка', 15, '#6e6e80');
+
+    /* ── лампочка на правой стороне ── */
+    var pl = onPath(S_LAMP);
+    var glow = st.on ? C.clamp(st.current / 95, 0, 1) : 0;
+    if (glow > 0.02) {
+      var g = ctx.createRadialGradient(pl.x, pl.y, 6, pl.x, pl.y, 118);
+      g.addColorStop(0, 'rgba(255,214,102,' + (0.8 * glow) + ')');
+      g.addColorStop(1, 'rgba(255,214,102,0)');
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(pl.x, pl.y, 118, 0, 6.284); ctx.fill();
+    }
+    ctx.beginPath(); ctx.arc(pl.x, pl.y, 40, 0, 6.284);
+    ctx.fillStyle = glow > 0.02 ? 'rgba(255,236,180,' + (0.35 + 0.5 * glow) + ')' : 'rgba(240,240,246,.9)';
+    ctx.fill();
+    ctx.strokeStyle = '#8d8d9e'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.strokeStyle = glow > 0.02 ? 'rgb(255,' + Math.round(180 + 60 * glow) + ',80)' : '#9a9aab';
+    ctx.lineWidth = 3.2;
+    ctx.beginPath();
+    for (var i = 0; i <= 24; i++) {
+      var t = i / 24, yy = pl.y - 17 + t * 34, xx = pl.x + Math.sin(t * Math.PI * 5) * 12;
+      i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy);
+    }
+    ctx.stroke();
+    C.label(ctx, pl.x + 74, pl.y + 6, 'лампочка', 15, '#6e6e80');
+
+    /* ── выключатель на верхней стороне ── */
+    var ps = onPath(S_SWITCH);
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(ps.x - 30, ps.y - HALF - 2, 60, HALF * 2 + 4);
+    ctx.strokeStyle = '#3e2f8e'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(ps.x - 26, ps.y);
+    if (st.on) ctx.lineTo(ps.x + 26, ps.y);
+    else ctx.lineTo(ps.x + 20, ps.y - 34);
+    ctx.stroke();
+    ctx.beginPath(); ctx.arc(ps.x - 26, ps.y, 5.5, 0, 6.284); ctx.fillStyle = '#3e2f8e'; ctx.fill();
+    ctx.beginPath(); ctx.arc(ps.x + 26, ps.y, 5.5, 0, 6.284); ctx.fill();
+    C.label(ctx, ps.x, ps.y - 48, st.on ? 'замкнуто' : 'разомкнуто', 15,
+            st.on ? '#3e2f8e' : '#6e6e80');
+
+    if (heat > 0.3) C.label(ctx, (X0 + X1) / 2, Y1 + 44, 'провод греется', 15, '#c0392b');
+  }
+
+  var ref = C.useStage(W, HGT, step, draw);
+  window.__demoState = st;   /* точка входа для отладки и автопроверок */
+
+  return html`
+    <div class="demo">
+      <div class="controls">
+        <${C.Group}>
+          <${C.Btn} action=${true} onClick=${toggle}>
+            ${ui.on ? 'Разомкнуть цепь' : 'Замкнуть цепь'}
+          <//>
+        <//>
+        <${C.Slider} label="Напряжение:" min=${0.4} max=${3} step=${0.05}
+                     value=${ui.volts} onChange=${setVolts}
+                     display=${ui.volts.toFixed(1) + ' В'} />
+      </div>
+      <canvas class="stage" ref=${ref}></canvas>
+      <${C.Status} html=${status} />
+    </div>`;
+}
+
+C.mount(TokVProvode);
+</script>
+</body>
+</html>
