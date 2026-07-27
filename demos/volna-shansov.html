@@ -103,9 +103,12 @@ function VolnaShansov(){
       var y = base - v * amp;
       x === x0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
     }
-    ctx.strokeStyle = '#3e2f8e'; ctx.lineWidth = 3.5; ctx.stroke();
+    ctx.save();
+    ctx.shadowColor = 'rgba(255,180,84,.55)'; ctx.shadowBlur = 18;
+    ctx.strokeStyle = '#ffb454'; ctx.lineWidth = 3.5; ctx.stroke();
+    ctx.restore();
     ctx.lineTo(x1, base); ctx.lineTo(x0, base); ctx.closePath();
-    ctx.fillStyle = 'rgba(62,47,142,.10)'; ctx.fill();
+    ctx.fillStyle = 'rgba(255,180,84,.16)'; ctx.fill();
   }
 
   function draw(ctx){
@@ -113,7 +116,7 @@ function VolnaShansov(){
 
     if (st.scene === 0) {
       drawCurve(ctx, pdfBell, W1.x0, W1.x1, W1.base, W1.amp, 1);
-      C.label(ctx, cx, 92, 'волна шансов', 20, '#3e2f8e');
+      C.label(ctx, cx, 92, 'волна шансов', 20, '#ffb454');
       /* попадания складываем в столбик под кривой */
       st.pts.forEach(function(p){
         var a = Math.min(1, p.age);
@@ -124,14 +127,14 @@ function VolnaShansov(){
       });
       /* гистограмма набранного */
       drawHist(ctx, cx, W1.base + 96, 760, 78, -380, 380);
-      C.label(ctx, cx, W1.base + 120, 'куда попали на самом деле', 16, '#6e6e80');
+      C.label(ctx, cx, W1.base + 120, 'куда попали на самом деле', 19, '#8c93ac');
 
     } else if (st.scene === 1) {
       drawCurve(ctx, pdfFringes, cx - 300, cx + 300, 210, 78, 1);
-      C.label(ctx, cx, 70, 'шансы сложились сами с собой', 20, '#3e2f8e');
+      C.label(ctx, cx, 70, 'шансы сложились сами с собой', 20, '#ffb454');
       /* экран */
       C.roundRect(ctx, cx - 330, 250, 660, 150, 10);
-      ctx.fillStyle = '#14141f'; ctx.fill();
+      ctx.fillStyle = '#03050b'; ctx.fill();
       st.pts.forEach(function(p){
         var a = Math.min(1, p.age);
         ctx.fillStyle = 'rgba(233,233,255,' + (0.5 + 0.5 * a) + ')';
@@ -143,26 +146,25 @@ function VolnaShansov(){
     } else {
       var ox = cx, oy = 214;
       /* ядро */
+      C.glow(ctx, ox, oy, 30, '255,122,102', .5);
       ctx.beginPath(); ctx.arc(ox, oy, 9, 0, 6.284);
-      ctx.fillStyle = '#c0392b'; ctx.fill();
+      ctx.fillStyle = '#ff7a66'; ctx.fill();
       /* попадания-облако */
       st.pts.forEach(function(p){
         var a = Math.min(1, p.age);
         ctx.fillStyle = 'rgba(46,95,163,' + (0.28 + 0.42 * a) + ')';
         ctx.beginPath(); ctx.arc(ox + p.x, oy + p.y, 2.6 + (1 - a) * 4, 0, 6.284); ctx.fill();
       });
-      C.label(ctx, ox, oy - 168, 'облако шансов', 20, '#3e2f8e');
-      C.label(ctx, ox + 22, oy + 5, 'ядро', 15, '#c0392b', 'left');
+      C.label(ctx, ox, oy - 168, 'облако шансов', 20, '#ffb454');
+      C.label(ctx, ox + 22, oy + 5, 'ядро', 19, '#ff7a66', 'left');
       /* кольцо самого вероятного радиуса */
-      ctx.setLineDash([6, 7]); ctx.strokeStyle = 'rgba(62,47,142,.45)'; ctx.lineWidth = 2;
+      ctx.setLineDash([6, 7]); ctx.strokeStyle = 'rgba(255,180,84,.45)'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(ox, oy, A0, 0, 6.284); ctx.stroke(); ctx.setLineDash([]);
-      C.label(ctx, ox, oy + A0 + 26, 'чаще всего электрон находят здесь', 16, '#6e6e80');
+      C.label(ctx, ox, oy + A0 + 26, 'чаще всего электрон находят здесь', 19, '#8c93ac');
     }
 
-    ctx.textAlign = 'right';
-    ctx.fillStyle = '#6e6e80'; ctx.font = '600 19px system-ui, sans-serif';
-    ctx.fillText('попаданий: ' + st.pts.length, W - 40, 40);
-    ctx.textAlign = 'center';
+    /* показания одним элементом на все демки */
+    C.readout(ctx, W - 34, 34, 'ПОПАДАНИЙ', st.pts.length);
   }
 
   function drawHist(ctx, cx, base, width, height, lo, hi){

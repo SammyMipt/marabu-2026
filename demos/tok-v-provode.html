@@ -110,6 +110,7 @@ function makeElectrons(){
 function TokVProvode(){
   var st = useRef({
     on: false, volts: 1.4,
+    markPath: 0, markS0: 0, markHits: 0, markTrail: [], markT: 0,
     atoms: makeAtoms(), electrons: makeElectrons(),
     heat: 0, current: 0, justClosed: 0
   }).current;
@@ -117,12 +118,16 @@ function TokVProvode(){
   var [ui, setUi] = useState({ on: false, volts: 1.4 });
   var [status, setStatus] = useState(
     'Цепь разомкнута. Электроны на месте и толкутся без толку. ' +
-    'Спросите зал: кто тронется первым, когда включим?');
+    'Кто тронется первым, когда включим?');
 
   function toggle(){
     st.on = !st.on;
     if (st.on) {
       st.justClosed = 1.6;
+      st.markPath = 0;
+      st.markHits = 0;
+      st.markTrail = [];
+      st.markS0 = st.electrons[0].s;
       setStatus('Тронулись <b>все разом</b> по всему кольцу — и у батарейки, и у лампочки. ' +
                 'Поле бежит по проводу мгновенно и толкает сразу всех.');
     } else {
@@ -146,7 +151,7 @@ function TokVProvode(){
     var a = st.on ? ACCEL * st.volts : 0;
     var hits = 0;
 
-    st.electrons.forEach(function(e){
+    st.electrons.forEach(function(e, ei){
       if (e.flash > 0) e.flash -= dt * 3;
 
       e.vs += a * dt;                       /* поле гонит вдоль провода */
@@ -186,6 +191,7 @@ function TokVProvode(){
           e.s += Math.cos(ang) * 3;
           e.cool = 0.18;
           e.flash = 1;
+          if (ei === 0 && st.on) st.markHits++;
           at.jitter = Math.min(1, at.jitter + 0.12 + gained / 260);
           hits += gained / 150;
           break;
@@ -198,6 +204,17 @@ function TokVProvode(){
     var hitRate = dt > 0 ? hits / dt : 0;
     st.heat += (hitRate * 0.005 - st.heat) * Math.min(1, dt / 0.7);
     if (st.heat < 0) st.heat = 0;
+
+    /* Путь ОДНОГО помеченного электрона: пока лампочка горит, зал видит,
+       что он едва сдвинулся. Это и есть мысль беата — тронулись все разом,
+       но сами электроны ползут. */
+    if (st.on) st.markPath += Math.max(0, st.electrons[0].vs) * dt;
+    st.markT += dt;
+    if (st.on && st.markT > .045) {
+      st.markT = 0;
+      st.markTrail.push({ x: st.electrons[0].x, y: st.electrons[0].y });
+      if (st.markTrail.length > 95) st.markTrail.shift();
+    }
 
     var drift = 0;
     st.electrons.forEach(function(e){ drift += e.vs; });
@@ -218,7 +235,7 @@ function TokVProvode(){
       ctx.closePath();
       ctx.lineWidth = width; ctx.strokeStyle = style; ctx.stroke();
     }
-    ring(HALF * 2 + 6, heat > 0.35 ? 'rgba(192,57,43,' + (0.35 + heat * 0.5) + ')' : '#b9b9c6');
+    ring(HALF * 2 + 6, heat > 0.35 ? 'rgba(255,122,102,' + (0.35 + heat * 0.5) + ')' : '#4a5268');
     ring(HALF * 2, 'rgb(' + Math.round(232 + 20 * heat) + ',' +
                             Math.round(232 - 76 * heat) + ',' +
                             Math.round(238 - 150 * heat) + ')');
@@ -228,7 +245,7 @@ function TokVProvode(){
       var j = Math.max(0, at.jitter);
       var ox = (Math.random() - 0.5) * j * 7, oy = (Math.random() - 0.5) * j * 7;
       ctx.beginPath(); ctx.arc(at.x + ox, at.y + oy, 11, 0, 6.284);
-      ctx.fillStyle = j > 0.05 ? 'rgba(192,57,43,' + (0.35 + j * 0.5) + ')' : '#a9a9bb';
+      ctx.fillStyle = j > 0.05 ? 'rgba(255,122,102,' + (0.35 + j * 0.5) + ')' : '#5a6379';
       ctx.fill();
     });
 
@@ -236,16 +253,27 @@ function TokVProvode(){
     st.electrons.forEach(function(e){
       if (e.flash > 0) {
         ctx.beginPath(); ctx.arc(e.x, e.y, 16, 0, 6.284);
-        ctx.fillStyle = 'rgba(192,57,43,' + (0.28 * e.flash) + ')'; ctx.fill();
+        ctx.fillStyle = 'rgba(255,122,102,' + (0.28 * e.flash) + ')'; ctx.fill();
       }
       C.electron(ctx, e.x, e.y, 0.78);
     });
 
-    /* стрелки «тронулись все разом» */
+    /* Фронт поля: от выключателя в обе стороны за 0.18 с — то есть почти
+       мгновенно по сравнению с дрейфом. Стрелка у электрона появляется
+       только после того, как фронт до него дошёл. */
     if (st.justClosed > 0) {
       var k = C.clamp(st.justClosed / 1.6, 0, 1);
-      ctx.strokeStyle = 'rgba(62,47,142,' + k + ')'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      var front = C.clamp((1.6 - st.justClosed) / 0.18, 0, 1) * PERIM / 2;
+      if (front < PERIM / 2) {
+        [1, -1].forEach(function(sgn){
+          var pf = onPath(((S_SWITCH + sgn * front) % PERIM + PERIM) % PERIM);
+          C.glow(ctx, pf.x, pf.y, 46, '255,180,84', .55);
+        });
+      }
+      ctx.strokeStyle = 'rgba(255,180,84,' + k + ')'; ctx.lineWidth = 3; ctx.lineCap = 'round';
       st.electrons.forEach(function(e){
+        var gap = Math.abs(((e.s - S_SWITCH + PERIM * 1.5) % PERIM) - PERIM * 0.5);
+        if (gap > front) return;
         /* касательная из наружной нормали: t = (−ny, nx), это и есть
            направление роста s, то есть направление движения электронов */
         var p = onPath(e.s), tx = -p.ny, ty = p.nx;
@@ -260,20 +288,39 @@ function TokVProvode(){
       });
     }
 
+    /* ── помеченный электрон: кольцо и пройденный путь ── */
+    var me = st.electrons[0];
+    if (st.markTrail.length > 1) {
+      ctx.strokeStyle = 'rgba(122,166,255,.55)'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+      ctx.beginPath();
+      st.markTrail.forEach(function(p, pi){
+        pi ? ctx.lineTo(p.x, p.y) : ctx.moveTo(p.x, p.y);
+      });
+      ctx.stroke();
+    }
+    C.glow(ctx, me.x, me.y, 34, '255,180,84', .5);
+    ctx.strokeStyle = '#ffb454'; ctx.lineWidth = 2.5;
+    ctx.beginPath(); ctx.arc(me.x, me.y, 15, 0, 6.284); ctx.stroke();
+    C.electron(ctx, me.x, me.y, 0.9);
+
+    /* показания: путь одного электрона против мгновенного фронта */
+    C.label(ctx, (X0 + X1) / 2, (Y0 + Y1) / 2 + 4,
+            st.on ? 'путь одного электрона' : 'цепь разомкнута', 19, '#8c93ac');
+
     /* ── батарейка на левой стороне ── */
     var pb = onPath(S_BATT);
     ctx.save();
     ctx.translate(pb.x, pb.y);
     C.roundRect(ctx, -30, -46, 60, 92, 9);
-    ctx.fillStyle = '#f2f0fb'; ctx.fill();
-    ctx.strokeStyle = '#3e2f8e'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.fillStyle = '#1b2233'; ctx.fill();
+    ctx.strokeStyle = '#ffb454'; ctx.lineWidth = 3; ctx.stroke();
     /* Электроны обходят контур по часовой и выходят из батарейки ВВЕРХ,
        поэтому вверху минус: во внешней цепи они идут от «−» к «+».
        Внутри самой батарейки их гонит химия, против поля — так и надо. */
-    C.label(ctx, 0, -14, '−', 30, '#3e2f8e');
-    C.label(ctx, 0, 34, '+', 30, '#3e2f8e');
+    C.label(ctx, 0, -14, '−', 30, '#ffb454');
+    C.label(ctx, 0, 34, '+', 30, '#ffb454');
     ctx.restore();
-    C.label(ctx, pb.x - 78, pb.y + 6, 'батарейка', 15, '#6e6e80');
+    C.label(ctx, pb.x - 78, pb.y + 6, 'батарейка', 19, '#8c93ac');
 
     /* ── лампочка на правой стороне ── */
     var pl = onPath(S_LAMP);
@@ -285,10 +332,11 @@ function TokVProvode(){
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(pl.x, pl.y, 118, 0, 6.284); ctx.fill();
     }
     ctx.beginPath(); ctx.arc(pl.x, pl.y, 40, 0, 6.284);
-    ctx.fillStyle = glow > 0.02 ? 'rgba(255,236,180,' + (0.35 + 0.5 * glow) + ')' : 'rgba(240,240,246,.9)';
+    ctx.fillStyle = glow > 0.02 ? 'rgba(255,236,180,' + (0.35 + 0.5 * glow) + ')' : 'rgba(90,100,120,.55)';
     ctx.fill();
-    ctx.strokeStyle = '#8d8d9e'; ctx.lineWidth = 3; ctx.stroke();
-    ctx.strokeStyle = glow > 0.02 ? 'rgb(255,' + Math.round(180 + 60 * glow) + ',80)' : '#9a9aab';
+    ctx.strokeStyle = '#5f6880'; ctx.lineWidth = 3; ctx.stroke();
+    if (glow > 0.02) C.glow(ctx, pl.x, pl.y, 90 * glow, '255,214,140', .5 * glow);
+    ctx.strokeStyle = glow > 0.02 ? 'rgb(255,' + Math.round(180 + 60 * glow) + ',80)' : '#565e73';
     ctx.lineWidth = 3.2;
     ctx.beginPath();
     for (var i = 0; i <= 24; i++) {
@@ -296,24 +344,35 @@ function TokVProvode(){
       i ? ctx.lineTo(xx, yy) : ctx.moveTo(xx, yy);
     }
     ctx.stroke();
-    C.label(ctx, pl.x + 74, pl.y + 6, 'лампочка', 15, '#6e6e80');
+    C.label(ctx, pl.x + 74, pl.y + 6, 'лампочка', 19, '#8c93ac');
 
     /* ── выключатель на верхней стороне ── */
     var ps = onPath(S_SWITCH);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(ps.x - 30, ps.y - HALF - 2, 60, HALF * 2 + 4);
-    ctx.strokeStyle = '#3e2f8e'; ctx.lineWidth = 6; ctx.lineCap = 'round';
-    ctx.beginPath();
-    ctx.moveTo(ps.x - 26, ps.y);
-    if (st.on) ctx.lineTo(ps.x + 26, ps.y);
-    else ctx.lineTo(ps.x + 20, ps.y - 34);
-    ctx.stroke();
-    ctx.beginPath(); ctx.arc(ps.x - 26, ps.y, 5.5, 0, 6.284); ctx.fillStyle = '#3e2f8e'; ctx.fill();
-    ctx.beginPath(); ctx.arc(ps.x + 26, ps.y, 5.5, 0, 6.284); ctx.fill();
-    C.label(ctx, ps.x, ps.y - 48, st.on ? 'замкнуто' : 'разомкнуто', 15,
-            st.on ? '#3e2f8e' : '#6e6e80');
+    var swW = 74, swH = HALF * 2 + 18;
+    C.roundRect(ctx, ps.x - swW / 2, ps.y - swH / 2, swW, swH, 9);
+    ctx.fillStyle = '#141a28'; ctx.fill();
+    ctx.strokeStyle = '#39415a'; ctx.lineWidth = 2; ctx.stroke();
 
-    if (heat > 0.3) C.label(ctx, (X0 + X1) / 2, Y1 + 44, 'провод греется', 15, '#c0392b');
+    /* контакты */
+    [-24, 24].forEach(function(dx){
+      ctx.beginPath(); ctx.arc(ps.x + dx, ps.y, 6, 0, 6.284);
+      ctx.fillStyle = '#ffb454'; ctx.fill();
+    });
+
+    /* рычаг: замкнут — лежит между контактами, разомкнут — поднят с зазором */
+    ctx.strokeStyle = st.on ? '#ffb454' : '#5f6880';
+    ctx.lineWidth = 6; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(ps.x - 24, ps.y);
+    if (st.on) ctx.lineTo(ps.x + 24, ps.y);
+    else ctx.lineTo(ps.x + 14, ps.y - 30);
+    ctx.stroke();
+    if (st.on) C.glow(ctx, ps.x, ps.y, 30, '255,180,84', .3);
+
+    C.label(ctx, ps.x, ps.y - swH / 2 - 16, st.on ? 'замкнуто' : 'разомкнуто', 19,
+            st.on ? '#ffb454' : '#8c93ac');
+
+    if (heat > 0.3) C.label(ctx, (X0 + X1) / 2, Y1 + 44, 'провод греется', 19, '#ff7a66');
   }
 
   var ref = C.useStage(W, HGT, step, draw);

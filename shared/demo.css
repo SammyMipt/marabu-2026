@@ -1,23 +1,34 @@
-/* Общие стили интерактивных демок.
+/* Вид интерактивных демок — панель лабораторного прибора.
 
-   Здесь СПЕЦИАЛЬНО нет инлайн-стилей в JS (как в старой коллекции Demo/):
-   весь вид демок задаётся классами и токенами в этом одном файле. Claude Design
-   на этапе оформления правит его — и меняются сразу все демки, а логика
-   и разметка компонентов не трогаются.
+   В JS демок инлайн-стилей нет вообще: весь вид задаётся здесь, поэтому
+   правка одного файла меняет сразу все демки, а логика и разметка не
+   трогаются. Структура у всех одна:
+
+       .demo
+         .controls  → .control-group → .control-label + .btn / .slider + .control-value
+         canvas.stage
+         .status
+
+   Замысел: сцена — это окно прибора (сетка, рамка, тёмное поле), сверху
+   рейка управления с сегментами вместо кнопок-таблеток, снизу строка
+   показаний. Ничего не выглядит как веб-форма.
 
    Токены дублируют палитру колоды: демка живёт в отдельном iframe и
    переменные слайда до неё не долетают. */
 
 :root {
-  --bg: #ffffff;
-  --ink: #1b1b2f;
-  --muted: #6e6e80;
-  --accent: #3e2f8e;
-  --chip: #f2f0fb;
-  --minus: #2e5fa3;
-  --plus: #c0392b;
-  --radius: 10px;
-  --font: system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  --bg: #06080f;
+  --ink: #eceef6;
+  --muted: #8c93ac;
+  --accent: #ffb454;
+  --chip: #1b2233;
+  --line: rgba(236, 238, 246, .13);
+  --glow: rgba(255, 180, 84, .3);
+  --minus: #7aa6ff;
+  --plus: #ff7a66;
+  --radius: 8px;
+  --font: 'Golos Text', system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 
 * { box-sizing: border-box; }
@@ -34,37 +45,72 @@ html, body, #root {
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 14px 18px;
-  gap: 10px;
 }
 
-/* ---------- панель управления ---------- */
+/* ---------- рейка управления ---------- */
 
-.controls { display: flex; gap: 22px; flex-wrap: wrap; align-items: center; }
-.control-group { display: flex; align-items: center; gap: 8px; }
-.control-label { font-size: 15px; color: var(--muted); white-space: nowrap; }
+.controls {
+  display: flex;
+  align-items: stretch;
+  flex-wrap: wrap;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(to bottom, rgba(255, 255, 255, .022), transparent);
+}
+
+/* Группы разделены линиями, как секции на передней панели */
+.control-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+}
+.control-group:first-child { padding-left: 0; }
+.control-group + .control-group { border-left: 1px solid var(--line); }
+
+.control-label {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ---------- сегменты вместо кнопок ---------- */
 
 .btn {
   font: inherit;
-  font-size: 16px;
-  padding: 8px 14px;
+  font-size: 15px;
+  line-height: 1.2;
+  padding: 7px 13px;
   border-radius: var(--radius);
-  border: 2px solid var(--chip);
-  background: var(--chip);
+  border: 1px solid var(--line);
+  background: transparent;
   color: var(--ink);
   cursor: pointer;
+  transition: border-color .14s ease, color .14s ease, background-color .14s ease;
 }
-.btn:hover:not(:disabled) { border-color: var(--accent); }
-.btn:disabled { opacity: .4; cursor: default; }
-.btn.is-active { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn:hover:not(:disabled) { border-color: rgba(255, 180, 84, .5); }
+.btn:disabled { opacity: .35; cursor: default; }
 
-.btn-action {
-  background: var(--bg);
+/* Активный сегмент — подсвечен, а не залит: прибор показывает выбор, а не
+   перекрашивает кнопку */
+.btn.is-active {
   border-color: var(--accent);
   color: var(--accent);
-  font-weight: 600;
+  background: rgba(255, 180, 84, .1);
+  box-shadow: inset 0 0 0 1px rgba(255, 180, 84, .18);
 }
-.btn-action:disabled { border-color: var(--chip); color: var(--muted); }
+
+/* Действие: то, что запускает опыт */
+.btn-action {
+  color: var(--accent);
+  border-color: rgba(255, 180, 84, .45);
+  font-weight: 500;
+}
+.btn-action:hover:not(:disabled) { background: rgba(255, 180, 84, .1); }
+.btn-action:disabled { color: var(--muted); border-color: var(--line); }
 
 /* ---------- ползунок ---------- */
 
@@ -72,55 +118,115 @@ html, body, #root {
   -webkit-appearance: none;
   appearance: none;
   width: 190px;
-  height: 6px;
-  border-radius: 3px;
-  background: var(--chip);
+  height: 3px;
+  border-radius: 2px;
+  background: var(--line);
   outline: none;
   cursor: pointer;
 }
+/* Ручка — риска, а не шарик: положение читается точнее */
 .slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 20px;
+  width: 6px;
   height: 20px;
-  border-radius: 50%;
+  border-radius: 2px;
   background: var(--accent);
+  box-shadow: 0 0 10px var(--glow);
   cursor: pointer;
 }
 .slider::-moz-range-thumb {
-  width: 20px;
+  width: 6px;
   height: 20px;
   border: 0;
-  border-radius: 50%;
+  border-radius: 2px;
   background: var(--accent);
+  box-shadow: 0 0 10px var(--glow);
   cursor: pointer;
 }
 .control-value {
+  font-family: var(--font-mono);
   font-variant-numeric: tabular-nums;
-  font-size: 16px;
-  color: var(--ink);
-  min-width: 74px;
+  font-size: 14px;
+  color: var(--accent);
+  min-width: 88px;
 }
 
 /* ---------- сцена ---------- */
 
-.stage { flex: 1; min-height: 0; width: 100%; display: block; }
+/* Окно прибора: миллиметровка под прозрачной канвой и мягкая виньетка
+   по краям. Сетка даёт масштаб и сразу читается как измерительное поле. */
+.stage {
+  flex: 1;
+  min-height: 150px;
+  width: 100%;
+  display: block;
+  background-color: #04060c;
+  background-image:
+    radial-gradient(ellipse 80% 70% at 50% 45%, transparent 55%, rgba(0, 0, 0, .5) 100%),
+    linear-gradient(to right, rgba(236, 238, 246, .045) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(236, 238, 246, .045) 1px, transparent 1px),
+    linear-gradient(to right, rgba(236, 238, 246, .022) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(236, 238, 246, .022) 1px, transparent 1px);
+  background-size: 100% 100%, 80px 80px, 80px 80px, 16px 16px, 16px 16px;
+}
 
-/* ---------- статус ---------- */
+/* ---------- строка показаний ---------- */
 
 /* Текст статуса обязан лежать в одном span: прямые текстовые узлы во
    flex-контейнере становятся отдельными flex-элементами, и пробелы между
    ними схлопываются («10 зарядов минусом» слипается в «зарядовминусом»). */
 .status {
-  background: var(--chip);
-  border-radius: var(--radius);
-  padding: 10px 14px;
+  flex: 0 0 auto;
+  border-top: 1px solid var(--line);
+  background: linear-gradient(to top, rgba(255, 255, 255, .022), transparent);
+  padding: 12px 16px 12px 30px;
   font-size: 17px;
   line-height: 1.35;
-  min-height: 46px;
+  min-height: 48px;
   display: flex;
   align-items: center;
+  position: relative;
 }
-.status .neg { color: var(--minus); font-weight: 700; }
-.status .pos { color: var(--plus); font-weight: 700; }
+/* Янтарная риска слева — индикатор «прибор говорит» */
+.status::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  width: 4px;
+  height: 4px;
+  margin-top: -2px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--glow);
+}
+.status .neg { color: var(--minus); font-weight: 600; }
+.status .pos { color: var(--plus); font-weight: 600; }
 .status .accent { color: var(--accent); font-weight: 600; }
+
+/* ---------- узкая врезка ----------
+
+   Демка внутри блока row получает половину ширины и треть высоты слайда.
+   Обвязка сжимается, сцена остаётся. */
+
+@media (max-width: 760px), (max-height: 420px) {
+  .controls { padding: 0; }
+  /* В узком кадре группы переносятся, и разделитель-бордюр превращается
+     в висячую риску в начале строки. Здесь секции разделяет только пробел:
+     лишние отступы стоят целого ряда рейки, а ряд — это 30% высоты сцены. */
+  .control-group { padding: 6px 0; gap: 6px; }
+  .control-group + .control-group { border-left: 0; margin-left: 14px; }
+  .control-label { font-size: 12px; letter-spacing: .08em; }
+  .btn { font-size: 13px; padding: 5px 9px; }
+  .slider { width: 100px; }
+  .control-value { font-size: 13px; min-width: 72px; }
+  .stage { min-height: 110px; background-size: 100% 100%, 48px 48px, 48px 48px, 12px 12px, 12px 12px; }
+  .status {
+    font-size: 13px;
+    line-height: 1.28;
+    padding: 8px 10px 8px 24px;
+    min-height: 0;
+  }
+  .status::before { left: 10px; }
+}

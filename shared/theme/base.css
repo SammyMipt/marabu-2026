@@ -1,162 +1,292 @@
-/* Базовая тема колод Марабу — намеренно минимальная («белый фон, системный
-   шрифт, рамки-пунктиры для заглушек»). Финальный визуал — отдельным этапом
-   через Claude Design: он переопределяет токены и стили блоков, не трогая
-   разметку и контент.
+/* Тема колод Марабу — «Люминофор».
 
-   Все цвета — ТОЛЬКО через CSS-переменные. Лекционные палитры
-   (electron.css / turbulence.css) переопределяют токены в :root. */
+   Слайд ведёт себя как экран лабораторного прибора: тёмное поле, свет идёт
+   от содержимого. Все цвета — ТОЛЬКО через переменные; палитры лежат в
+   electron.css / electron-day.css / turbulence.css и переопределяют :root.
+
+   Ничего из вёрстки не завязано на конкретную лекцию. */
+
+/* Шрифты подкладываются файлами в shared/fonts/. Пока файлов нет, работают
+   системные фолбэки — вёрстка от этого не разъезжается. */
+@font-face { font-family: 'Onest'; src: url('../fonts/Onest-Bold.woff2') format('woff2'); font-weight: 700; font-display: swap; }
+@font-face { font-family: 'Onest'; src: url('../fonts/Onest-Medium.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'Golos Text'; src: url('../fonts/GolosText-Regular.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+@font-face { font-family: 'Golos Text'; src: url('../fonts/GolosText-Medium.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+@font-face { font-family: 'JetBrains Mono'; src: url('../fonts/JetBrainsMono-Medium.woff2') format('woff2'); font-weight: 500; font-display: swap; }
 
 :root {
-  --bg: #ffffff;
-  --ink: #1b1b2f;
-  --muted: #6e6e80;
-  --accent: #3e2f8e;
-  --chip: #f2f0fb;
-  --demo-fill: #edeaf8;
-  --title-sub: #d9d4f2;
+  --bg: #0a0d1a;
+  --ink: #eceef6;
+  --muted: #8c93ac;
+  --accent: #ffb454;
+  --chip: #141a2b;
+  --line: rgba(236, 238, 246, .12);
+  --glow: rgba(255, 180, 84, .28);
+  --screen: #06080f;
+  --scan: .045;
 
-  --font-head: Cambria, Georgia, 'Times New Roman', serif;
-  --font-body: system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+  --font-head: 'Onest', 'Golos Text', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-body: 'Golos Text', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 
 .reveal-viewport { background: var(--bg); }
 .reveal { font-family: var(--font-body); color: var(--ink); }
-/* var(--slide-height) выставляет сам reveal; фолбэк 100% — до инициализации.
-   Так секция ровно 720px и на экране, и в ?print-pdf (без клипа низа). */
-.reveal .slides section { text-align: left; height: var(--slide-height, 100%); box-sizing: border-box; }
+.reveal .slides section {
+  text-align: left;
+  height: var(--slide-height, 100%);
+  box-sizing: border-box;
+}
 
+/* Развёртка: тонкие строки поверх всего слайда. Статичные, без анимации —
+   на слабой машине это ноль работы для GPU. */
+.reveal-viewport::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 60;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255, 255, 255, var(--scan)) 0 1px,
+    transparent 1px 3px);
+}
+
+/* Нижние 46px — шина сквозного электрона (LANE_Y = 700 в electron-lane.js
+   плюс радиус свечения ~18). Контент туда не заходит ни на одном
+   типе слайда — иначе свечение ложится на кромку кадра. */
 .slide-inner {
   height: 100%;
   display: flex;
   flex-direction: column;
-  padding: 44px 56px;
+  padding: 46px 64px 46px;
   box-sizing: border-box;
 }
 
-/* ---------- контентные слайды ---------- */
+/* ---------- шапка слайда ---------- */
 
 .kicker {
+  font-family: var(--font-mono);
   font-size: 15px;
-  font-weight: 700;
-  letter-spacing: 2.5px;
+  font-weight: 500;
+  letter-spacing: .2em;
+  color: var(--muted);
+  margin: 0 0 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  text-transform: uppercase;
+}
+
+.kicker-step {
   color: var(--accent);
-  margin: 0 0 10px;
+  border: 1px solid var(--glow);
+  border-radius: 4px;
+  padding: 2px 8px 1px;
+  letter-spacing: .12em;
+}
+
+.kicker-phase { color: var(--muted); }
+
+/* Хвост-линия уводит кикер в правый край: строка приборной шкалы,
+   а не подпись. */
+.kicker::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, var(--line), transparent);
 }
 
 .heading {
   font-family: var(--font-head);
-  font-size: 44px;
+  font-size: 47px;
   font-weight: 700;
-  line-height: 1.05;
+  line-height: 1.04;
+  letter-spacing: -.015em;
   color: var(--ink);
-  margin: 0 0 26px;
+  margin: 0 0 30px;
+  text-wrap: balance;
+  max-width: 22ch;
 }
 
 .blocks {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 22px;
   min-height: 0;
 }
 
 .blk { margin: 0; }
 
-/* Крупная мысль */
+/* ---------- крупная мысль ---------- */
+
 .blk-lead {
   font-family: var(--font-head);
-  font-size: 34px;
-  font-weight: 700;
-  line-height: 1.2;
+  font-size: 35px;
+  font-weight: 500;
+  line-height: 1.22;
+  letter-spacing: -.01em;
   color: var(--accent);
+  max-width: 34ch;
+  text-wrap: pretty;
 }
 
-/* Маркированный список */
+/* ---------- список ---------- */
+
 .blk-bullets {
   list-style: none;
   padding: 0;
   margin: 0;
-  font-size: 25px;
-  line-height: 1.35;
+  font-size: 28px;
+  line-height: 1.38;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  max-width: 34ch;
+  text-wrap: pretty;
 }
-.blk-bullets li { position: relative; padding-left: 34px; margin-bottom: 14px; }
-.blk-bullets li::before { content: '–'; position: absolute; left: 8px; }
+.blk-bullets li { position: relative; padding-left: 38px; }
+.blk-bullets li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: .62em;
+  width: 20px;
+  height: 2px;
+  background: var(--accent);
+}
 
-/* Формула с подписью */
+/* ---------- формула ---------- */
+
 .blk-formula {
-  background: var(--chip);
-  border-radius: 14px;
-  padding: 26px 30px 20px;
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22px;
   text-align: center;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  padding: 30px 0;
 }
+/* Рядом с другими блоками формула берёт ровно свою высоту:
+   иначе два flex:1-блока делят экран пополам и демка схлопывается. */
+.blocks > .blk-formula:not(:only-child) {
+  flex: 0 0 auto;
+  gap: 14px;
+  padding: 20px 0 18px;
+}
+.blocks > .blk-formula:not(:only-child) .formula-text { font-size: 54px; }
+.blocks > .blk-formula:not(:only-child) .formula-caption { font-size: 24px; max-width: 62ch; }
 .formula-text {
   font-family: var(--font-head);
-  font-size: 38px;
-  font-weight: 700;
+  font-size: 68px;
+  font-weight: 500;
+  letter-spacing: .01em;
   color: var(--accent);
+  text-shadow: 0 0 34px var(--glow);
 }
-.formula-text.small { font-size: 29px; }
-.formula-caption { font-size: 17px; font-style: italic; color: var(--muted); margin-top: 12px; }
+.formula-text.small { font-size: 44px; }
+.formula-caption {
+  font-size: 24px;
+  color: var(--muted);
+  max-width: 46ch;
+  line-height: 1.45;
+}
 
-/* Заглушка демки (позже — iframe) и живой опыт */
+/* ---------- демка ---------- */
+
 .blk-demo, .blk-live {
-  border-radius: 16px;
-  padding: 20px 26px;
-  text-align: center;
+  border-radius: 14px;
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 12px;
+  gap: 14px;
 }
 .blk-demo {
-  background: var(--demo-fill);
-  border: 2px dashed var(--accent);
   flex: 1 1 auto;
   min-height: 120px;
+  padding: 18px 24px;
+  text-align: center;
+  background: var(--chip);
+  border: 1px dashed var(--line);
 }
-.blk-live { background: var(--chip); }
-.blk-label { font-size: 14px; font-weight: 700; letter-spacing: 2.5px; color: var(--accent); }
-.blk-desc { font-size: 21px; line-height: 1.35; color: var(--ink); max-width: 950px; margin: 0 auto; }
+/* Готовая демка — не карточка с полями, а сам прибор: рамка в один пиксель */
+.blk-demo.has-frame {
+  padding: 0;
+  background: var(--screen);
+  border: 1px solid var(--line);
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .4), 0 18px 60px rgba(0, 0, 0, .45);
+}
+.demo-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: transparent; }
 
-.blk-demo.has-frame { padding: 8px; border-style: solid; }
-/* min-height:0 гасит интринсик-высоту iframe (150px), иначе он выдавит контент из блока */
-.demo-frame { flex: 1; min-height: 0; width: 100%; border: 0; border-radius: 10px; background: var(--bg); }
+.blk-live { background: var(--chip); padding: 18px 24px; }
+.blk-label {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 500;
+  letter-spacing: .2em;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.blk-desc {
+  font-size: 24px;
+  line-height: 1.4;
+  color: var(--muted);
+  max-width: 70ch;
+  margin: 0 auto;
+}
 
-/* Две колонки-карточки */
+/* ---------- две карточки ---------- */
+
 .blk-compare {
   display: grid;
   grid-template-columns: 1fr 1fr;
-  gap: 22px;
+  gap: 26px;
   flex: 1 1 auto;
   align-items: stretch;
 }
 .compare-col {
   background: var(--chip);
   border-radius: 14px;
-  padding: 28px 30px;
+  border-top: 2px solid var(--line);
+  padding: 30px 32px;
   display: flex;
   flex-direction: column;
-  justify-content: center;   /* короткий текст не жмётся к верху растянутой карточки */
+  justify-content: center;
+  gap: 14px;
 }
+/* Правая карточка почти всегда несёт поворот мысли — ей луч */
+.compare-col + .compare-col { border-top-color: var(--accent); }
 .compare-title {
   font-family: var(--font-head);
-  font-size: 27px;
+  font-size: 26px;
   font-weight: 700;
-  color: var(--accent);
-  margin-bottom: 14px;
+  letter-spacing: -.01em;
+  color: var(--ink);
 }
-.compare-body { font-size: 24px; line-height: 1.4; }
+.compare-col + .compare-col .compare-title { color: var(--accent); }
+.compare-body { font-size: 24px; line-height: 1.42; color: var(--muted); text-wrap: pretty; }
 
-/* Слайд, где главное — медиа: обвязку ужимаем, кадру отдаём максимум высоты */
-.slide-media .slide-inner { padding: 26px 40px 30px; }
-.slide-media .kicker { margin-bottom: 6px; }
-.slide-media .heading { font-size: 36px; margin-bottom: 0; }
-.slide-media .blocks { gap: 14px; }
-.slide-media .blk-lead { font-size: 27px; }
+/* ---------- медиа ---------- */
 
-/* Видео: локальный <video> или iframe (YouTube) */
-.blk-video { flex: 1 1 auto; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-.video-frame {
+.slide-media .slide-inner { padding: 34px 44px 46px; }
+.slide-media .kicker { margin-bottom: 8px; }
+.slide-media .heading { font-size: 38px; margin-bottom: 0; max-width: none; }
+.slide-media .blocks { gap: 16px; }
+.slide-media .blk-lead { font-size: 27px; max-width: none; }
+
+.blk-video, .blk-image {
+  flex: 1 1 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+.video-frame, .image-frame {
   flex: 1;
   min-height: 0;
   width: 100%;
@@ -165,51 +295,218 @@
   background: #000;
   object-fit: contain;
 }
+.blk-image { text-align: center; }
+.image-frame { background: transparent; }
 
-/* Картинка с подписью */
-.blk-image { flex: 1 1 auto; display: flex; flex-direction: column; gap: 10px; min-height: 0; text-align: center; }
-.image-frame { flex: 1; min-height: 0; width: 100%; object-fit: contain; border-radius: 12px; }
+/* ---------- ряд ---------- */
 
-/* Горизонтальный ряд блоков */
 .blk-row {
   display: grid;
   grid-auto-flow: column;
   grid-auto-columns: 1fr;
-  gap: 20px;
+  gap: 24px;
   flex: 1 1 auto;
   min-height: 0;
 }
 .row-cell { display: flex; flex-direction: column; min-height: 0; }
 .row-cell > .blk { flex: 1; min-height: 0; }
 
-/* ---------- титул и финал (акцентный «сэндвич») ---------- */
+/* ---------- титул, беат-развороты, финал ---------- */
 
-.slide-accent .slide-inner { justify-content: center; }
-.accent-title { font-family: var(--font-head); font-weight: 700; color: #fff; margin: 0; }
-.slide-title .accent-title { font-size: 64px; line-height: 1.05; }
-.slide-closing .accent-title { font-size: 44px; line-height: 1.15; max-width: 1050px; }
-.accent-subtitle { color: #fff; margin: 26px 0 0; }
-.slide-title .accent-subtitle { font-size: 30px; }
-.slide-closing .accent-subtitle {
-  font-size: 22px;
-  line-height: 1.5;
-  color: var(--title-sub);
-  max-width: 1020px;
-}
-.accent-tag {
-  font-size: 16px;
+.slide-accent .slide-inner { justify-content: center; padding: 46px 88px; }.accent-title {
+  font-family: var(--font-head);
   font-weight: 700;
-  letter-spacing: 2.5px;
-  color: var(--title-sub);
-  margin: 44px 0 0;
+  letter-spacing: -.02em;
+  color: var(--ink);
+  margin: 0;
+  text-wrap: balance;
 }
+.slide-title .accent-title { font-size: 92px; line-height: 1; }
+.slide-closing .accent-title { font-size: 54px; line-height: 1.1; max-width: 18ch; }
+
+/* Луч: горизонтальная линия развёртки под заголовком */
+.accent-title::after {
+  content: '';
+  display: block;
+  height: 2px;
+  margin-top: 32px;
+  background: linear-gradient(to right, var(--accent), transparent);
+  box-shadow: 0 0 24px var(--glow);
+  transform-origin: left center;
+  width: 100%;
+  max-width: 620px;
+}
+.reveal .present .accent-title::after { animation: beam-sweep .9s cubic-bezier(.2, .7, .2, 1) both; }
+
+@keyframes beam-sweep {
+  from { transform: scaleX(0); opacity: 0; }
+  to   { transform: scaleX(1); opacity: 1; }
+}
+
+.accent-subtitle {
+  color: var(--muted);
+  margin: 28px 0 0;
+  max-width: 40ch;
+  line-height: 1.45;
+  text-wrap: pretty;
+}
+.slide-title .accent-subtitle { font-size: 28px; color: var(--ink); }
+.slide-closing .accent-subtitle { font-size: 23px; }
+.accent-tag {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  font-weight: 500;
+  letter-spacing: .2em;
+  color: var(--muted);
+  text-transform: uppercase;
+  margin: 52px 0 0;
+}
+
+/* Первый слайд беата — класс ставит deck.js, оформление живёт ниже */
+
+/* ---------- непрерывность: кадровая развёртка и подача содержимого ----------
+
+   Слайд не «сменяется», а перерисовывается: сверху вниз пробегает луч
+   кадровой развёртки, и за ним проявляется содержимое. Внутри одного беата
+   шапка стоит на месте и едет только начинка — именно это убирает
+   ощущение перещёлкивания карточек. */
+
+/* Сквозной электрон: шина под контентом, поверх слайда, под развёрткой */
+.electron-lane {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1280px;
+  height: 720px;
+  z-index: 58;
+  pointer-events: none;
+}
+
+.frame-scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 180px;
+  z-index: 59;
+  pointer-events: none;
+  opacity: 0;
+  background: linear-gradient(to bottom,
+    transparent,
+    rgba(255, 255, 255, .015) 55%,
+    var(--glow) 96%,
+    var(--accent) 100%);
+}
+.frame-scan.on { animation: frame-scan 460ms cubic-bezier(.35, 0, .25, 1); }
+
+/* Титул: развёртка не останавливается. Трубка держит кадр ровно потому,
+   что луч рисует его заново десятки раз в секунду, а люминофор между проходами
+   медленно гаснет. На титуле это замедлено до видимого: зал рассаживается,
+   а экран живёт. Текст при этом не исчезает — только дышит яркостью вслед за лучом. */
+.frame-scan.loop { animation: frame-scan-loop 2600ms linear infinite; }
+
+.slide-title.scan-loop.present .accent-title,
+.slide-title.scan-loop.present .accent-subtitle,
+.slide-title.scan-loop.present .accent-tag {
+  animation: phosphor 2600ms linear infinite;
+}
+/* Фаза каждой строки считается в deck.js по её высоте на экране:
+   строка вспыхивает в тот момент, когда через неё проходит луч. */
+
+@keyframes phosphor {
+  0%   { opacity: 1; }
+  100% { opacity: .72; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame-scan.loop { animation: none; }
+  .slide-title.scan-loop.present .accent-title,
+  .slide-title.scan-loop.present .accent-subtitle,
+  .slide-title.scan-loop.present .accent-tag { animation: none; }
+}
+
+@keyframes frame-scan {
+  from { transform: translateY(-180px); opacity: .95; }
+  to   { transform: translateY(540px); opacity: .35; }
+}
+
+/* Петля на титуле тише одиночного прохода: её смотрят минутами,
+   а не полсекунды, и она не должна перетягивать внимание с названия. */
+@keyframes frame-scan-loop {
+  0%   { transform: translateY(-180px); opacity: 0; }
+  12%  { opacity: .5; }
+  88%  { opacity: .5; }
+  100% { transform: translateY(540px); opacity: 0; }
+}
+
+/* Кадр рисуется самим лучом: маска раскрывается сверху вниз синхронно
+   с нижней кромкой развёртки — та же длительность, тот же easing, тот же путь
+   0→720. Луч не украшение перехода, а его причина: содержимое появляется ровно
+   там, где он уже прошёл. */
+.anim:not(.same-beat) .slide-inner {
+  animation: paint-down 460ms cubic-bezier(.35, 0, .25, 1) both;
+}
+
+@keyframes paint-down {
+  from { clip-path: inset(0 0 100% 0); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+
+/* Внутри беата: шапка неподвижна, блоки сдвигаются вбок — как кадр
+   в одной и той же сцене */
+.anim.same-beat .blocks > .blk {
+  animation: shift-in 380ms cubic-bezier(.2, .7, .2, 1) both;
+}
+.anim.same-beat[data-nav='back'] .blocks > .blk { animation-name: shift-in-back; }
+.anim.same-beat .blocks > .blk:nth-child(2) { animation-delay: 60ms; }
+.anim.same-beat .blocks > .blk:nth-child(3) { animation-delay: 110ms; }
+
+/* Новый беат или разворот: кадр рисует луч (paint-down выше).
+   Листание назад — тот же ход, чтобы не ломать метафору: трубка рисует
+   кадр только сверху вниз. */
+
+@keyframes shift-in {
+  from { opacity: 0; transform: translateX(34px); }
+  to   { opacity: 1; transform: none; }
+}
+@keyframes shift-in-back {
+  from { opacity: 0; transform: translateX(-34px); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* Первый слайд беата: к подъёму добавляется раскрытие линии шкалы */
+.anim.beat-start .kicker::after { animation: scale-line 620ms cubic-bezier(.2, .7, .2, 1) both; }
+@keyframes scale-line {
+  from { transform: scaleX(0); transform-origin: left center; }
+  to   { transform: scaleX(1); transform-origin: left center; }
+}
+
+@media print {
+  .frame-scan { display: none; }
+  .anim .slide-inner,
+  .anim .slide-inner > *,
+  .anim .blocks > .blk { animation: none !important; clip-path: none !important; }
+}
+
+/* ---------- буллеты по одному ---------- */
+
+.reveal .slides section .fragment.visible { opacity: 1; }
 
 /* ---------- обвязка reveal ---------- */
 
-.reveal .progress { color: var(--accent); }
+.reveal .progress { color: var(--accent); height: 2px; }
 .reveal .slide-number {
   background: transparent;
   color: var(--muted);
-  font-size: 16px;
-  font-family: var(--font-body);
+  font-family: var(--font-mono);
+  font-size: 14px;
+  letter-spacing: .1em;
+  right: 22px;
+  bottom: 14px;
+}
+
+/* Печать в PDF: развёртка и свечение только мешают */
+@media print {
+  .reveal-viewport::after { display: none; }
+  .formula-text { text-shadow: none; }
 }

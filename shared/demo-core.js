@@ -112,22 +112,48 @@
     ctx.closePath();
   }
 
-  /* Электрон: залитый синий кружок с минусом. Один и тот же значок во
-     всех демках — зал должен узнавать его без пояснений. */
+  /* Свечение: на тёмной сцене всё живое светится, а не лежит плоским.
+     rgb — строка «R,G,B», чтобы не плодить конверсии в каждой демке. */
+  function glow(ctx, x, y, r, rgb, a) {
+    var g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, 'rgba(' + rgb + ',' + a + ')');
+    g.addColorStop(.35, 'rgba(' + rgb + ',' + (a * .5) + ')');
+    g.addColorStop(1, 'rgba(' + rgb + ',0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 6.284); ctx.fill();
+  }
+
+  /* Электрон: светящийся кружок с минусом. Один и тот же значок во всех
+     демках — зал должен узнавать его без пояснений. */
   function electron(ctx, x, y, scale) {
     scale = scale || 1;
     ctx.save();
     ctx.translate(x, y); ctx.scale(scale, scale);
+    glow(ctx, 0, 0, 26, '122,166,255', .45);
     ctx.beginPath(); ctx.arc(0, 0, 10, 0, 6.284);
-    ctx.fillStyle = '#2e5fa3'; ctx.fill();
-    ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.6; ctx.lineCap = 'round';
+    ctx.fillStyle = '#7aa6ff'; ctx.fill();
+    ctx.strokeStyle = '#0b1020'; ctx.lineWidth = 2.6; ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(-5, 0); ctx.lineTo(5, 0); ctx.stroke();
     ctx.restore();
   }
 
+  /* Приборный индикатор: подпись капсом и крупное моноширинное число.
+     Тот же элемент, что в «двух щелях», — чтобы во всех демках показания
+     читались одинаково и с задних рядов. */
+  function readout(ctx, x, y, capt, value, color) {
+    ctx.textAlign = 'right';
+    ctx.font = '600 15px "JetBrains Mono", ui-monospace, monospace';
+    ctx.fillStyle = '#8c93ac';
+    ctx.fillText(capt, x, y);
+    ctx.font = '600 32px "JetBrains Mono", ui-monospace, monospace';
+    ctx.fillStyle = color || '#ffb454';
+    ctx.fillText(String(value), x, y + 38);
+    ctx.textAlign = 'center';
+  }
+
   function label(ctx, x, y, text, size, color, align) {
-    ctx.fillStyle = color || '#5b5b6b';
-    ctx.font = (size || 16) + 'px system-ui, sans-serif';
+    ctx.fillStyle = color || '#8c93ac';
+    ctx.font = (size || 19) + 'px "Golos Text", system-ui, sans-serif';
     ctx.textAlign = align || 'center';
     ctx.fillText(text, x, y);
   }
@@ -177,6 +203,7 @@
     h: h, html: html,
     clamp: clamp, ease: ease, lerp: lerp, sampleFrom: sampleFrom, plural: plural,
     useStage: useStage, roundRect: roundRect, electron: electron, label: label,
+    glow: glow, readout: readout,
     Btn: Btn, Group: Group, Slider: Slider, Status: Status, mount: mount
   };
 })(window);

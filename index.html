@@ -5,39 +5,70 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Марабу 2026 — лекции</title>
   <style>
-    :root { color-scheme: light; }
+    :root {
+      color-scheme: dark;
+      --bg: #0a0d1a;
+      --ink: #eceef6;
+      --muted: #8c93ac;
+      --accent: #ffb454;
+      --chip: #141a2b;
+      --line: rgba(236, 238, 246, .12);
+      --font-body: 'Golos Text', system-ui, -apple-system, 'Segoe UI', sans-serif;
+      --font-head: 'Onest', 'Golos Text', system-ui, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, Menlo, Consolas, monospace;
+    }
     body {
-      font-family: system-ui, -apple-system, 'Segoe UI', Roboto, Arial, sans-serif;
+      font-family: var(--font-body);
       max-width: 720px;
-      margin: 8vh auto;
+      margin: 12vh auto;
       padding: 0 24px;
-      color: #1b1b2f;
-      background: #fff;
+      color: var(--ink);
+      background: var(--bg);
       line-height: 1.5;
     }
-    h1 { font-family: Cambria, Georgia, serif; font-size: 32px; margin-bottom: 32px; }
+    h1 {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      font-weight: 500;
+      letter-spacing: .2em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin: 0 0 40px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    h1::after { content: ''; flex: 1; height: 1px; background: linear-gradient(to right, var(--line), transparent); }
     a.deck {
       display: block;
-      padding: 20px 24px;
+      padding: 26px 28px;
       margin-bottom: 16px;
       border-radius: 14px;
       text-decoration: none;
+      background: var(--chip);
+      border-top: 2px solid var(--line);
+      transition: border-color .18s ease;
     }
-    a.deck strong { font-family: Cambria, Georgia, serif; font-size: 22px; display: block; margin-bottom: 4px; }
-    a.deck span { font-size: 15px; }
-    .electron { background: #f2f0fb; }
-    .electron strong { color: #3e2f8e; }
-    .electron span { color: #6e6e80; }
-    .turbulence { background: #edf5f7; }
-    .turbulence strong { color: #0f6e86; }
-    .turbulence span { color: #5c6b73; }
-    .hint { font-size: 14px; color: #6e6e80; margin-top: 40px; }
+    a.deck:hover { border-top-color: var(--accent); }
+    a.deck strong {
+      font-family: var(--font-head);
+      font-size: 30px;
+      font-weight: 700;
+      letter-spacing: -.02em;
+      display: block;
+      margin-bottom: 8px;
+      color: var(--ink);
+    }
+    a.deck span { font-size: 16px; color: var(--muted); }
+    a.deck:hover strong { color: var(--accent); }
+    .hint { font-size: 14px; color: var(--muted); margin-top: 48px; line-height: 1.7; }
     .hint kbd {
-      font-family: inherit;
-      border: 1px solid #d0d0da;
+      font-family: var(--font-mono);
+      font-size: 12px;
+      border: 1px solid var(--line);
       border-radius: 4px;
-      padding: 1px 6px;
-      background: #fafafa;
+      padding: 2px 7px;
+      color: var(--ink);
     }
   </style>
 </head>

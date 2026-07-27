@@ -1,58 +1,29 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" role="img"
-     aria-label="Та же схема опыта, но у верхней щели поставлен детектор, который следит, прошёл ли через неё электрон">
-  <!-- Вариант shema-opyta.svg с детектором у ВЕРХНЕЙ щели, для беата 4.
-       Всё остальное — пушка, стенка, экран, след электрона — повторено
-       один в один: зал должен узнать кадр и заметить ровно одно отличие.
-       Экран снова пуст: что на нём появится, зал предсказывает вслух,
-       и ответ даёт демка на следующем слайде.
-       Цвета продублированы из shared/theme/electron.css: <img> не наследует
-       CSS-переменные страницы. При редизайне править здесь, в блоке style. -->
-  <style>
-    svg { --ink:#1b1b2f; --accent:#3e2f8e; --muted:#6e6e80; --chip:#f2f0fb; --watch:#c0392b; }
-    .body   { fill: var(--chip);   stroke: var(--accent); stroke-width: 3; }
-    .metal  { fill: var(--accent); }
-    .screen { fill: var(--ink); }
-    .dot    { fill: var(--accent); }
-    .label  { fill: var(--ink); font-family: Cambria, Georgia, serif; font-size: 38px; text-anchor: middle; }
-    .tick   { stroke: var(--muted); stroke-width: 2; stroke-dasharray: 5 6; fill: none; }
-    .det    { fill: #fff; stroke: var(--watch); stroke-width: 3.5; }
-    .detlab { fill: var(--watch); font-family: Cambria, Georgia, serif; font-size: 34px; text-anchor: middle; }
-    .beam   { stroke: var(--watch); stroke-width: 3; stroke-dasharray: 7 7; fill: none; }
-  </style>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 400" role="img" aria-label="Та же схема опыта, но у верхней щели поставлен детектор, который следит, прошёл ли через неё электрон">
+  <rect x="46" y="122" width="126" height="106" rx="10" fill="#1b2233" stroke="#ffb454" stroke-width="3"></rect>
+  <path d="M172 153 h44 a6 6 0 0 1 0 44 h-44 z" fill="#ffb454"></path>
+  <circle cx="92" cy="175" r="13" fill="#ffb454"></circle>
+  <path d="M109 175 H160" fill="none" stroke="#8c93ac" stroke-width="2" stroke-dasharray="5 6"></path>
 
-  <!-- ── пушка ─────────────────────────────────────────────── -->
-  <rect class="body" x="46" y="122" width="126" height="106" rx="10"/>
-  <path class="metal" d="M172 153 h44 a6 6 0 0 1 0 44 h-44 z"/>
-  <circle class="metal" cx="92" cy="175" r="13"/>
-  <path class="tick" d="M109 175 H160"/>
+  <circle cx="268" cy="172" r="9" fill="#ffb454" opacity=".22"></circle>
+  <circle cx="366" cy="166" r="9" fill="#ffb454" opacity=".45"></circle>
+  <circle cx="464" cy="160" r="9" fill="#ffb454" opacity=".75"></circle>
+  <circle cx="556" cy="154" r="9" fill="#ffb454"></circle>
 
-  <!-- след одного электрона, как в исходной схеме -->
-  <circle class="dot" cx="268" cy="172" r="9" opacity=".22"/>
-  <circle class="dot" cx="366" cy="166" r="9" opacity=".45"/>
-  <circle class="dot" cx="464" cy="160" r="9" opacity=".75"/>
-  <circle class="dot" cx="556" cy="154" r="9"/>
-
-  <!-- ── стенка с двумя щелями ─────────────────────────────── -->
-  <g class="metal">
-    <rect x="574" y="20"  width="26" height="112" rx="4"/>
-    <rect x="574" y="166" width="26" height="18"  rx="4"/>
-    <rect x="574" y="218" width="26" height="112" rx="4"/>
+  <g fill="#ffb454">
+    <rect x="574" y="20" width="26" height="112" rx="4"></rect>
+    <rect x="574" y="166" width="26" height="18" rx="4"></rect>
+    <rect x="574" y="218" width="26" height="112" rx="4"></rect>
   </g>
 
-  <!-- ── детектор у верхней щели ───────────────────────────────
-       Смотрит на щель 132–166. Красный — единственный чужой цвет
-       в кадре, поэтому отличие от прошлой схемы видно мгновенно. -->
-  <rect class="det" x="646" y="54" width="118" height="72" rx="12"/>
-  <circle class="det" cx="705" cy="90" r="21"/>
-  <circle cx="705" cy="90" r="9" fill="#c0392b"/>
-  <path class="beam" d="M690 112 L612 146"/>
-  <text class="detlab" x="705" y="196">следит</text>
+  <rect x="646" y="54" width="118" height="72" rx="12" fill="#241a22" stroke="#ff7a66" stroke-width="3.5"></rect>
+  <circle cx="705" cy="90" r="21" fill="#241a22" stroke="#ff7a66" stroke-width="3.5"></circle>
+  <circle cx="705" cy="90" r="9" fill="#ff7a66"></circle>
+  <path d="M690 112 L612 146" fill="none" stroke="#ff7a66" stroke-width="3" stroke-dasharray="7 7"></path>
+  <text x="705" y="196" fill="#ff7a66" font-family="Golos Text, system-ui, sans-serif" font-size="34" text-anchor="middle">следит</text>
 
-  <!-- ── экран ─────────────────────────────────────────────── -->
-  <rect class="screen" x="936" y="20" width="34" height="310" rx="8"/>
+  <rect x="936" y="20" width="34" height="310" rx="8" fill="#03050b" stroke="rgba(236,238,246,.22)" stroke-width="2"></rect>
 
-  <!-- ── подписи ───────────────────────────────────────────── -->
-  <text class="label" x="109" y="378">пушка</text>
-  <text class="label" x="587" y="378">две щели</text>
-  <text class="label" x="953" y="378">экран</text>
+  <text x="109" y="378" fill="#8c93ac" font-family="Golos Text, system-ui, sans-serif" font-size="36" text-anchor="middle">пушка</text>
+  <text x="587" y="378" fill="#8c93ac" font-family="Golos Text, system-ui, sans-serif" font-size="36" text-anchor="middle">две щели</text>
+  <text x="953" y="378" fill="#8c93ac" font-family="Golos Text, system-ui, sans-serif" font-size="36" text-anchor="middle">экран</text>
 </svg>

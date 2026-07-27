@@ -12,10 +12,18 @@
     return;
   }
 
+  /* Короткие слова (предлоги, союзы, одиночные буквы) не должны висеть
+     в конце строки: заголовок кеглем 47 px ломается очень заметно.
+     Дважды — чтобы поймать цепочки вида «и у щели». */
+  function nbsp(text) {
+    var re = /(^|[\s(«„])([a-zA-Zа-яёА-ЯЁ]{1,2})\s+/g;
+    return String(text).replace(re, '$1$2\u00a0').replace(re, '$1$2\u00a0');
+  }
+
   function el(tag, cls, text) {
     var n = document.createElement(tag);
     if (cls) n.className = cls;
-    if (text != null) n.textContent = text;
+    if (text != null) n.textContent = nbsp(text);
     return n;
   }
 
@@ -25,7 +33,9 @@
     },
     bullets: function (b) {
       var ul = el('ul', 'blk blk-bullets');
-      b.items.forEach(function (t) { ul.appendChild(el('li', null, t)); });
+      /* fragment: пункты выходят по одному — зал читает вместе с лектором,
+         а не убегает вперёд. Отключается снятием класса. */
+      b.items.forEach(function (t) { ul.appendChild(el('li', 'fragment', t)); });
       return ul;
     },
     formula: function (b) {
@@ -138,8 +148,15 @@
     }
   };
 
-  var accent = getComputedStyle(document.documentElement)
-    .getPropertyValue('--accent').trim();
+  /* Кикер вида «ШАГ 3 · ВАУ» разбирается на номер беата и фазу: номер
+     оформляется отдельно, а первый слайд каждого беата получает класс
+     beat-start — по нему тема даёт «прогрев экрана». */
+  function kickerParts(text) {
+    var m = /^\s*ШАГ\s+(\d+)\s*·\s*(.+)$/i.exec(text || '');
+    return m ? { step: m[1], phase: m[2] } : { step: null, phase: text };
+  }
+
+  var seenBeat = null;
 
   spec.slides.forEach(function (sl) {
     var s = document.createElement('section');
@@ -147,14 +164,24 @@
 
     if (sl.type === 'title' || sl.type === 'closing') {
       s.className = 'slide-accent slide-' + sl.type;
-      s.setAttribute('data-background-color', accent);
+      seenBeat = null; /* после разворота следующий беат снова «прогревается» */
       inner.appendChild(el('h1', 'accent-title', sl.title));
       if (sl.subtitle) inner.appendChild(el('p', 'accent-subtitle', sl.subtitle));
       if (sl.tag) inner.appendChild(el('p', 'accent-tag', sl.tag));
     } else {
       /* layout:'media' — видео/картинка во весь слайд: обвязка ужимается */
       s.className = 'slide-content' + (sl.layout ? ' slide-' + sl.layout : '');
-      if (sl.kicker) inner.appendChild(el('p', 'kicker', sl.kicker));
+      if (sl.kicker) {
+        var kp = kickerParts(sl.kicker);
+        var k = el('p', 'kicker');
+        if (kp.step) {
+          k.appendChild(el('span', 'kicker-step', 'ШАГ ' + kp.step));
+          if (kp.step !== seenBeat) { s.classList.add('beat-start'); seenBeat = kp.step; }
+          s.setAttribute('data-beat', kp.step);
+        }
+        k.appendChild(el('span', 'kicker-phase', kp.phase));
+        inner.appendChild(k);
+      }
       inner.appendChild(el('h2', 'heading', sl.heading));
       var wrap = el('div', 'blocks');
       (sl.blocks || []).forEach(function (b) {
@@ -180,13 +207,91 @@
     margin: 0.04,
     hash: true,                       /* ссылка на конкретный слайд */
     center: false,
-    transition: 'none',
+    transition: 'none',               /* переходы держим сами, ниже */
     controls: false,
     progress: true,
     slideNumber: true,
     /* null: iframe с data-preload прогреваются заранее (viewDistance), остальные — при показе.
        Кликер (PageUp/PageDown) работает из коробки: дефолтные клавиши reveal 5.x. */
     preloadIframes: null,
+    /* Буллеты выходят фрагментами, а reveal по умолчанию печатает каждый
+       фрагмент отдельной страницей: у «Турбулентности» это дало бы 14 лишних
+       листов. Аварийный PDF должен быть один слайд — одна страница. */
+    pdfSeparateFragments: false,
     plugins: [RevealNotes]
+  });
+
+  /* ── Непрерывность вместо перещёлкивания ───────────────────────────
+     Экран не подменяет одну карточку другой, а перерисовывается: сверху
+     вниз проходит луч кадровой развёртки, и содержимое встаёт за ним.
+     Внутри одного беата шапка остаётся неподвижной и едет только начинка —
+     зал видит продолжение сцены, а не новый слайд. */
+
+  var scan = document.createElement('div');
+  scan.className = 'frame-scan';
+  /* Луч живёт ВНУТРИ масштабируемого контейнера reveal, в тех же локальных
+     1280×720, что и слайд. Иначе он едет в экранных пикселях, а маска
+     раскрывается в масштабированных, и кромки расходятся. */
+  (document.querySelector('.reveal .slides') || document.body).appendChild(scan);
+
+  var prevIndex = -1;
+  var SCAN_PERIOD = 2600;   /* совпадает с frame-scan-loop и phosphor в base.css */
+  var SLIDE_H = 720;
+
+  /* Затухание люминофора обязано совпадать с проходом луча: строка вспыхивает
+     тогда, когда кромка развёртки доходит до её низа, а не в начале цикла.
+     Фаза задаётся отрицательной задержкой — анимация стартует сразу в нужной
+     точке. Координаты локальные (offsetTop внутри секции): луч живёт в том же
+     пространстве 1280x720. */
+  function phaseTitle(section) {
+    var kids = section.querySelectorAll('.slide-inner > *');
+    for (var i = 0; i < kids.length; i++) {
+      var node = kids[i];
+      var bottom = node.offsetTop + node.offsetHeight;
+      var f = Math.max(0, Math.min(1, bottom / SLIDE_H));
+      node.style.animationDelay = Math.round(f * SCAN_PERIOD - SCAN_PERIOD) + 'ms';
+    }
+  }
+
+  function animateSlide(section, forward) {
+    if (!section) return;
+    var prev = section.previousElementSibling;
+    var beat = section.getAttribute('data-beat');
+    var sameBeat = !!beat && !!prev && prev.getAttribute('data-beat') === beat
+                   && !section.classList.contains('beat-start');
+
+    section.setAttribute('data-nav', forward ? 'fwd' : 'back');
+    section.classList.toggle('same-beat', sameBeat);
+
+    /* перезапуск анимаций: класс снимается, форсируется reflow, ставится назад */
+    section.classList.remove('anim');
+    void section.offsetWidth;
+    section.classList.add('anim');
+
+    /* Луч бежит только на «крупных» переходах: внутри беата он мешал бы
+       читать продолжение той же мысли. Бесконечная петля — только на первом
+       слайде колоды. Внутри лекции есть другие слайды type:'title' — это
+       развороты ради кегля, и живая развёртка там только мешает. */
+    var isOpening = section.classList.contains('slide-title') && !section.previousElementSibling;
+    scan.classList.remove('on', 'loop');
+    void scan.offsetWidth;
+    if (isOpening) {
+      section.classList.add('scan-loop');
+      scan.classList.add('loop');
+      phaseTitle(section);
+    } else if (!sameBeat) {
+      scan.classList.add('on');
+    }
+  }
+
+  Reveal.on('ready', function (e) {
+    prevIndex = e.indexh;
+    animateSlide(e.currentSlide, true);
+  });
+
+  Reveal.on('slidechanged', function (e) {
+    var forward = e.indexh >= prevIndex;
+    prevIndex = e.indexh;
+    animateSlide(e.currentSlide, forward);
   });
 })();
