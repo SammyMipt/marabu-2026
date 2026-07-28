@@ -27,6 +27,53 @@
     return n;
   }
 
+  /* ── разметка поверх картинки ──────────────────────────────────────
+     Один шаг разметки — один фрагмент reveal: лектор ведёт измерение
+     кликами, а зал видит, как из снимка получается число. Примитивов
+     ровно три, больше пока не понадобилось: отрезок, дуга и подпись.
+     Вид задаётся классами в base.css, здесь только геометрия. */
+
+  var SVGNS = 'http://www.w3.org/2000/svg';
+
+  function svg(tag, cls, attrs) {
+    var n = document.createElementNS(SVGNS, tag);
+    if (cls) n.setAttribute('class', cls);
+    for (var k in attrs) if (attrs.hasOwnProperty(k)) n.setAttribute(k, attrs[k]);
+    return n;
+  }
+
+  var SHAPES = {
+    line: function (s) {
+      return svg('line', 'mark-line', { x1: s.from[0], y1: s.from[1], x2: s.to[0], y2: s.to[1] });
+    },
+    /* Верхняя полудуга вокруг точки: показывает, что шар считают шаром */
+    arc: function (s) {
+      var x = s.at[0], y = s.at[1], r = s.r;
+      return svg('path', 'mark-arc',
+        { d: 'M ' + (x - r) + ' ' + y + ' A ' + r + ' ' + r + ' 0 0 1 ' + (x + r) + ' ' + y });
+    },
+    text: function (s) {
+      var t = svg('text', 'mark-text', { x: s.at[0], y: s.at[1], 'text-anchor': s.anchor || 'middle' });
+      t.textContent = nbsp(s.text);
+      return t;
+    }
+  };
+
+  function marksLayer(steps, natural) {
+    var root = svg('svg', 'image-marks',
+      { viewBox: '0 0 ' + natural[0] + ' ' + natural[1], 'aria-hidden': 'true' });
+    steps.forEach(function (step) {
+      var g = svg('g', 'fragment');
+      (step || []).forEach(function (s) {
+        var make = SHAPES[s.kind];
+        if (make) g.appendChild(make(s));
+        else console.warn('deck.js: неизвестный примитив разметки', s.kind);
+      });
+      root.appendChild(g);
+    });
+    return root;
+  }
+
   var BLOCKS = {
     lead: function (b) {
       return el('div', 'blk blk-lead', b.text);
@@ -34,18 +81,52 @@
     bullets: function (b) {
       var ul = el('ul', 'blk blk-bullets');
       /* fragment: пункты выходят по одному — зал читает вместе с лектором,
-         а не убегает вперёд. Отключается снятием класса. */
-      b.items.forEach(function (t) { ul.appendChild(el('li', 'fragment', t)); });
+         а не убегает вперёд. В простой колоде по умолчанию выключено, но
+         блок может попросить сам: reveal:true. Так сделан слайд, где зал
+         называет параметры, а лектор открывает их по одному. */
+      var byOne = (spec.meta && spec.meta.plain) ? !!b.reveal : b.reveal !== false;
+      b.items.forEach(function (t) {
+        ul.appendChild(el('li', byOne ? 'fragment' : null, t));
+      });
       return ul;
     },
     formula: function (b) {
       var box = el('div', 'blk blk-formula');
-      box.appendChild(el('div', 'formula-text' + (b.size === 'small' ? ' small' : ''), b.text));
+      var line = el('div', 'formula-text' + (b.size === 'small' ? ' small' : ''));
+      /* tex рендерится KaTeX'ом, text остаётся простым текстом: у части
+         формул руками набранная строка читается лучше набора. */
+      if (b.tex && window.katex) {
+        try {
+          window.katex.render(b.tex, line, { throwOnError: false, displayMode: true });
+        } catch (e) { line.textContent = b.text || b.tex; }
+      } else {
+        line.textContent = b.text || b.tex || '';
+      }
+      box.appendChild(line);
       if (b.caption) box.appendChild(el('div', 'formula-caption', b.caption));
       return box;
     },
+    /* Разбор размерностей: несколько строк формул с подписями, чтобы
+       показать вывод по шагам, а не одним прыжком. */
+    derive: function (b) {
+      var box = el('div', 'blk blk-derive');
+      (b.steps || []).forEach(function (st) {
+        var row = el('div', 'derive-row');
+        var f = el('div', 'derive-tex');
+        if (st.tex && window.katex) {
+          try { window.katex.render(st.tex, f, { throwOnError: false, displayMode: false }); }
+          catch (e) { f.textContent = st.tex; }
+        } else f.textContent = st.tex || '';
+        row.appendChild(f);
+        if (st.note) row.appendChild(el('div', 'derive-note', st.note));
+        box.appendChild(row);
+      });
+      return box;
+    },
     demo: function (b) {
-      var box = el('div', 'blk blk-demo');
+      /* bare: иллюстрация, а не прибор. Рамку, фон и тень снимаем — картинка
+         должна читаться частью слайда, а не панелью с показаниями. */
+      var box = el('div', 'blk blk-demo' + (b.bare ? ' is-bare' : ''));
       /* Метка только у ненаписанных демок: где демка есть, зал видит её саму */
       if (!b.src) box.appendChild(el('div', 'blk-label', 'ЗАГЛУШКА · ИНТЕРАКТИВНАЯ ДЕМКА'));
       if (b.src) {
@@ -129,7 +210,23 @@
       var img = el('img', 'image-frame');
       img.setAttribute('data-src', b.src);
       if (b.alt) img.setAttribute('alt', b.alt);
-      box.appendChild(img);
+
+      /* Разметка поверх снимка: шаги выходят по клику, как фрагменты reveal.
+         Координаты — в пикселях исходного файла, поэтому размечать можно
+         прямо по нему, не пересчитывая под экран. Чтобы это работало,
+         картинка и слой обязаны занимать один и тот же прямоугольник:
+         отсюда обёртка с aspect-ratio вместо object-fit, который сам решает,
+         где внутри блока показать кадр, и слой уезжает от снимка. */
+      if (b.marks && b.natural) {
+        var stage = el('div', 'image-stage');
+        stage.style.aspectRatio = b.natural[0] + ' / ' + b.natural[1];
+        stage.appendChild(img);
+        stage.appendChild(marksLayer(b.marks, b.natural));
+        box.appendChild(stage);
+      } else {
+        box.appendChild(img);
+      }
+
       if (b.caption) box.appendChild(el('div', 'blk-desc', b.caption));
       return box;
     },
@@ -192,6 +289,11 @@
       inner.appendChild(wrap);
     }
 
+    /* Слайды, на которых живёт фоновая струя. Она общая на несколько слайдов
+       подряд и не перезапускается на границе: зал видит продолжение той же
+       картинки, а не новый дым. Кто именно её показывает — дело контента. */
+    if (sl.smoke) s.setAttribute('data-smoke', '');
+
     s.appendChild(inner);
     if (sl.notes) s.appendChild(el('aside', 'notes', sl.notes));
     root.appendChild(s);
@@ -227,6 +329,13 @@
      Внутри одного беата шапка остаётся неподвижной и едет только начинка —
      зал видит продолжение сцены, а не новый слайд. */
 
+  /* Эстетика электронно-лучевой трубки — луч развёртки, сканлайны, прогрев
+     экрана — придумана под «Электрон» и там работает метафорой. В лекции про
+     течения она означала бы ровно ничего, поэтому колода может от неё
+     отказаться: meta.plain в slides.js. Тогда остаётся чистая типографика. */
+  var PLAIN = !!(spec.meta && spec.meta.plain);
+  if (PLAIN) document.documentElement.classList.add('deck-plain');
+
   var scan = document.createElement('div');
   scan.className = 'frame-scan';
   /* Луч живёт ВНУТРИ масштабируемого контейнера reveal, в тех же локальных
@@ -254,7 +363,7 @@
   }
 
   function animateSlide(section, forward) {
-    if (!section) return;
+    if (!section || PLAIN) return;   /* простая колода листается без затей */
     var prev = section.previousElementSibling;
     var beat = section.getAttribute('data-beat');
     var sameBeat = !!beat && !!prev && prev.getAttribute('data-beat') === beat

@@ -165,8 +165,10 @@
                         disabled=${!!p.disabled} onClick=${p.onClick}>${p.children}</button>`;
   }
 
+  /* cls — модификатор группы: 'step' для шагового регулятора,
+     где значению хватает пары знаков и общая ширина ползунка лишняя. */
   function Group(p) {
-    return html`<div class="control-group">
+    return html`<div class=${'control-group' + (p.cls ? ' ' + p.cls : '')}>
       ${p.label ? html`<span class="control-label">${p.label}</span>` : null}
       ${p.children}
     </div>`;

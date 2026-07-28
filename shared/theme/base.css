@@ -179,6 +179,10 @@
   padding: 20px 0 18px;
 }
 .blocks > .blk-formula:not(:only-child) .formula-text { font-size: 54px; }
+/* size:'small' обязан пережить правило выше: оно длиннее и без этой строки
+   молча выигрывало у .formula-text.small — ровно на тех слайдах, где формула
+   стоит рядом с демкой и мельче её просили именно потому, что она длинная. */
+.blocks > .blk-formula:not(:only-child) .formula-text.small { font-size: 42px; }
 .blocks > .blk-formula:not(:only-child) .formula-caption { font-size: 24px; max-width: 62ch; }
 .formula-text {
   font-family: var(--font-head);
@@ -220,6 +224,16 @@
   border: 1px solid var(--line);
   overflow: hidden;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, .4), 0 18px 60px rgba(0, 0, 0, .45);
+}
+/* Иллюстрация, а не прибор: ни рамки, ни фона, ни тени. Так нарисованное
+   на канве читается частью слайда — например, маятник рядом со списком,
+   пока зал называет, от чего зависит период. */
+.blk-demo.is-bare {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+  padding: 0;
+  overflow: visible;
 }
 .demo-frame { flex: 1; min-height: 0; width: 100%; border: 0; background: transparent; }
 
@@ -297,6 +311,58 @@
 }
 .blk-image { text-align: center; }
 .image-frame { background: transparent; }
+
+/* ---------- измерение поверх снимка ----------
+
+   Разметка живёт в координатах исходного файла, поэтому картинка и слой
+   обязаны лежать в одном прямоугольнике. object-fit тут не годится: он сам
+   решает, где внутри блока показать кадр, а слой об этом не знает и уезжает.
+   Поэтому обёртка держит пропорции снимка, а картинка занимает её целиком. */
+
+.image-stage {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  align-self: center;
+  max-width: 100%;
+}
+.image-stage .image-frame { width: 100%; height: 100%; display: block; }
+.image-marks { position: absolute; left: 0; top: 0; width: 100%; height: 100%; }
+
+/* Шаги измерения — обычные фрагменты reveal, но своё правило видимости
+   нужно: у reveal показанный фрагмент получает visibility:inherit, и на
+   SVG-группе это разрешалось в hidden. Отрезки появлялись прозрачными,
+   то есть не появлялись вовсе. */
+.reveal .slides section .image-marks > .fragment {
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity .25s ease;
+}
+.reveal .slides section .image-marks > .fragment.visible {
+  opacity: 1;
+  visibility: visible;
+}
+
+.mark-line { stroke: var(--accent); stroke-width: 8; stroke-linecap: round; }
+.mark-arc {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 7;
+  stroke-dasharray: 30 26;
+  opacity: .9;
+}
+/* Подпись ложится на пересвеченный кадр, где белое на белом пропадает:
+   тёмная обводка под заливкой держит её читаемой на любом месте снимка. */
+.mark-text {
+  fill: #fff;
+  font-family: var(--font-head);
+  font-size: 96px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, .8);
+  stroke-width: 12px;
+  stroke-linejoin: round;
+}
 
 /* ---------- ряд ---------- */
 
@@ -379,6 +445,23 @@
   width: 1280px;
   height: 720px;
   z-index: 58;
+  pointer-events: none;
+}
+
+/* Струйка «Турбулентности»: поверх фона, но под текстом слайда.
+
+   z-index обязан быть меньше единицы. .reveal позиционирован с z-index:auto
+   и своего контекста наложения не создаёт, поэтому слой и .reveal .slides
+   (z-index: 1) меряются в одном контексте — на двойке дым шёл ПОВЕРХ
+   заголовка и буллетов. Пока источник стоял справа от текста, это не было
+   заметно, но клубы гуляют вширь, а на слайде акта 0 текста стало больше. */
+.smoke-lane {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
   pointer-events: none;
 }
 
@@ -510,3 +593,74 @@
   .reveal-viewport::after { display: none; }
   .formula-text { text-shadow: none; }
 }
+
+/* ══════════════════ простая колода ══════════════════
+
+   Метафора электронно-лучевой трубки — сканлайны, свечение люминофора,
+   луч развёртки, прогрев экрана — придумана под «Электрон». В лекции про
+   течения она не значит ничего, поэтому колода с meta.plain отключает её
+   целиком и остаётся с чистой типографикой на тёмном поле.
+
+   Отменяем эффекты, а не переопределяем вёрстку: раскладка, кегли и ритм
+   у обеих колод общие. */
+
+.deck-plain .reveal-viewport::after { display: none; }     /* сканлайны */
+.deck-plain .frame-scan { display: none; }                 /* луч развёртки */
+
+.deck-plain .formula-text,
+.deck-plain .accent-title { text-shadow: none; }
+
+.deck-plain .blk-formula { border-color: var(--line); }
+
+/* никакого прогрева и выезда: слайд просто появляется */
+.deck-plain .slide-inner,
+.deck-plain .slide-inner > *,
+.deck-plain .blocks > .blk,
+.deck-plain .accent-title,
+.deck-plain .accent-subtitle,
+.deck-plain .accent-tag {
+  animation: none !important;
+  clip-path: none !important;
+  opacity: 1 !important;
+  transform: none !important;
+}
+
+/* ---------- разбор по шагам (blk-derive) ---------- */
+
+.blk-derive {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  justify-content: center;
+  flex: 1 1 auto;
+}
+.derive-row {
+  display: grid;
+  grid-template-columns: minmax(0, auto) 1fr;
+  align-items: baseline;
+  gap: 26px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.derive-row:last-child { border-bottom: 0; }
+.derive-tex { font-size: 30px; color: var(--ink); white-space: nowrap; }
+.derive-note { font-size: 22px; color: var(--muted); line-height: 1.35; }
+
+/* Разбор в соседстве с формулой ужимается: слайд «Энергия из одной
+   фотографии» несёт и плашку, и три шага. В одиночку разбор дышит как
+   прежде — на слайде про размерности маятника ему отдан весь экран. */
+.blocks > .blk-derive:not(:only-child) { gap: 12px; }
+.blocks > .blk-derive:not(:only-child) .derive-row { padding-bottom: 12px; }
+.blocks > .blk-derive:not(:only-child) .derive-tex { font-size: 27px; }
+.blocks > .blk-derive:not(:only-child) .derive-note { font-size: 21px; }
+
+/* KaTeX должен слушаться палитры слайда, а не тащить свой чёрный */
+.katex { color: inherit; }
+.blk-formula .katex { font-size: 1em; }
+
+/* Своя вёрстка отступов. KaTeX в display-режиме ставит на формулу поля
+   в 1em сверху и снизу, а em здесь — кегль формулы: при 54 px это 108 px
+   пустоты вокруг каждой плашки. Именно из-за них слайд «Энергия из одной
+   фотографии» не влезал в 720 px и терял строку с ответом. Расстояния
+   между блоками задаёт раскладка слайда, формуле их держать не за чем. */
+.formula-text .katex-display { margin: 0; }

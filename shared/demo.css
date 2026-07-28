@@ -31,6 +31,19 @@
   --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
 }
 
+/* Палитра «Турбулентности». Токены выше сняты с «Электрона» — янтарный луч
+   в трубке, — и на бирюзовой колоде рейка управления спорила бы с тем, что
+   нарисовано на сцене. Демка объявляет class="turb" на <html>. */
+.turb {
+  --bg: #071316;
+  --ink: #e6f1f4;
+  --muted: #86a0a8;
+  --accent: #35c8d8;
+  --chip: #0e2128;
+  --line: rgba(230, 241, 244, .12);
+  --glow: rgba(53, 200, 216, .26);
+}
+
 * { box-sizing: border-box; }
 
 html, body, #root {
@@ -152,6 +165,17 @@ html, body, #root {
   min-width: 88px;
 }
 
+/* Шаговый регулятор «− значение +». Ширина в 88 px рассчитана на показания
+   ползунка вроде «1.00×», а здесь в значении два знака: рейка от такого
+   запаса ломалась на два ряда, и между буквами зияло пусто. */
+.control-group.step { padding: 10px 12px; gap: 6px; }
+.control-group.step .control-value {
+  min-width: 34px;
+  font-size: 17px;
+  text-align: center;
+}
+.control-group.step .btn { padding: 7px 11px; }
+
 /* ---------- сцена ---------- */
 
 /* Окно прибора: миллиметровка под прозрачной канвой и мягкая виньетка
@@ -170,6 +194,114 @@ html, body, #root {
     linear-gradient(to bottom, rgba(236, 238, 246, .022) 1px, transparent 1px);
   background-size: 100% 100%, 80px 80px, 80px 80px, 16px 16px, 16px 16px;
 }
+
+/* ---------- рисунок вместо прибора ----------
+
+   Иногда на слайде нужна не демка, а картинка: она ничего не измеряет и
+   ничем не управляет, ей нечего показывать в рейке и в строке показаний.
+   Тогда страница объявляет class="bare" на <html>, фон отдаёт слайду, и
+   канва остаётся одна. Сетка со сцены тоже уходит — она означает
+   измерительное поле, а мерить здесь нечего. */
+
+.bare, .bare body, .bare #root { background: transparent; }
+/* .stage растянут через flex:1, и без flex-контейнера канва свернулась бы
+   в дефолтные 150 px: в .demo это делала обвязка, здесь делать некому. */
+.bare #root { display: flex; }
+
+.stage-plain {
+  background-color: transparent;
+  background-image: none;
+  min-height: 120px;
+}
+
+/* ---------- панель вместо сцены ----------
+
+   Конструктор размерностей ничего не анимирует: это формулы, и рисовать их
+   на канве значит набирать математику подручными средствами. Поэтому там,
+   где сцена была бы канвой, стоит .panel — тот же прямоугольник прибора,
+   но внутри DOM, и формулы набирает KaTeX. */
+
+/* Содержимое собрано в середине, а не расперто по краям: на высокой сцене
+   space-between разгонял четыре строки по углам, и панель выглядела пустой. */
+.panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 18px;
+  padding: 12px 20px;
+  overflow: hidden;
+}
+.panel .katex { color: inherit; }
+
+.pi-count { text-align: center; color: var(--muted); font-size: 19px; }
+
+.pi-cards {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
+  gap: 12px;
+  min-height: 0;
+}
+.pi-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, .028);
+  padding: 10px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  transition: border-color .15s, background .15s;
+}
+/* Величина в деле подсвечивается: видно, что уже взято в комбинацию */
+.pi-card.is-on {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.pi-sym { font-size: 36px; color: var(--ink); }
+.pi-card.is-on .pi-sym { color: var(--accent); }
+.pi-name { font-size: 16px; color: var(--muted); }
+.pi-unit { font-size: 15px; color: var(--muted); }
+
+/* Счётчики базовых единиц: каждый обязан прийти к нулю, и видно, какой ещё нет */
+.pi-tallies { display: flex; justify-content: center; gap: 14px; }
+.pi-tally {
+  min-width: 128px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 7px 14px;
+  text-align: center;
+  font-size: 21px;
+  color: var(--muted);
+}
+.pi-tally.is-zero {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+}
+
+/* Высота под ответ зарезервирована: дробь выше строки-подсказки, и без
+   резерва панель на кульминации подпрыгивала бы и лезла за край. */
+.pi-result {
+  text-align: center;
+  flex: 0 0 auto;
+  min-height: 82px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 2px;
+}
+.pi-result .pi-hint { font-size: 19px; color: var(--muted); }
+.pi-result .pi-tag {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: .2em;
+  color: var(--muted);
+}
+.pi-result .pi-formula { font-size: 31px; color: var(--accent); margin-top: 2px; }
 
 /* ---------- строка показаний ---------- */
 
