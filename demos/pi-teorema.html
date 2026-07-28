@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="ru" class="turb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Конструктор размерностей</title>
+<link rel="stylesheet" href="../shared/vendor/katex/katex.min.css">
+<link rel="stylesheet" href="../shared/demo.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../shared/vendor/react.production.min.js"></script>
+<script src="../shared/vendor/react-dom.production.min.js"></script>
+<script src="../shared/vendor/htm.js"></script>
+<script src="../shared/vendor/katex/katex.min.js"></script>
+<script src="../shared/demo-core.js"></script>
+<script>
+'use strict';
+var C = window.DemoCore, html = C.html;
+var useState = React.useState;
+
+/* Конструктор размерностей к слайду про пи-теорему.
+
+   У каждой величины своя степень, её щёлкают стрелками. Внизу три счётчика —
+   метр, килограмм, секунда, — и каждый должен прийти к нулю. Лампочки
+   «получилось» мало: счётчики показывают не только ЧТО сошлось, но и ПОЧЕМУ.
+   На течении это видно лучше всего: килограмм несут ровно две величины,
+   плотность и вязкость, поэтому они обязаны прийти в паре. Тот же довод,
+   что на слайде про маятник («килограмм есть только у массы, поделить не
+   на что»), только с обратным исходом.
+
+   Перетаскивания нет намеренно: мышью на чужом проекторе это риск, а
+   степени вдобавок честнее показывают, что комбинация — произведение
+   степеней, и что промах это «остались лишние килограммы», а не «не
+   сработало».
+
+   Сцена здесь не канва, а DOM: тут нечего анимировать, зато есть что
+   набирать математикой. Формулы, единицы и показатели рендерит KaTeX,
+   вендоренный в shared/vendor/katex. Все три набора собираются целыми
+   степенями, дробных не нужно. */
+
+var BASE = [
+  { tex: '\\text{м}',  name: 'м'  },
+  { tex: '\\text{кг}', name: 'кг' },
+  { tex: '\\text{с}',  name: 'с'  }
+];
+var LIM = 5;
+
+/* d — степени метра, килограмма и секунды в единицах величины */
+var SETS = [
+  { id: 'flow', label: 'Течение',
+    say: 'Скорость, размер, плотность и вязкость.',
+    q: [
+      { tex: '\\rho', name: 'плотность', unit: '\\dfrac{\\text{кг}}{\\text{м}^3}', d: [-3, 1, 0] },
+      { tex: 'U',     name: 'скорость',  unit: '\\dfrac{\\text{м}}{\\text{с}}',    d: [1, 0, -1] },
+      { tex: 'L',     name: 'размер',    unit: '\\text{м}',                        d: [1, 0, 0] },
+      { tex: '\\mu',  name: 'вязкость',  unit: '\\text{Па}\\cdot\\text{с}',        d: [-1, 1, -1] }
+    ] },
+  { id: 'pend', label: 'Маятник',
+    say: 'Период, длина, тяжесть и угол размаха.',
+    q: [
+      { tex: 'T',       name: 'период',  unit: '\\text{с}',                         d: [0, 0, 1] },
+      { tex: 'L',       name: 'длина',   unit: '\\text{м}',                         d: [1, 0, 0] },
+      { tex: 'g',       name: 'тяжесть', unit: '\\dfrac{\\text{м}}{\\text{с}^2}',   d: [1, 0, -2] },
+      { tex: '\\theta', name: 'размах',  unit: '\\text{без единиц}',                d: [0, 0, 0] }
+    ] },
+  { id: 'trin', label: 'Тринити',
+    say: 'Энергия взрыва, плотность воздуха, время и радиус шара.',
+    q: [
+      { tex: 'E',    name: 'энергия',   unit: '\\text{Дж}',                      d: [2, 1, -2] },
+      { tex: '\\rho', name: 'плотность', unit: '\\dfrac{\\text{кг}}{\\text{м}^3}', d: [-3, 1, 0] },
+      { tex: 't',    name: 'время',     unit: '\\text{с}',                       d: [0, 0, 1] },
+      { tex: 'R',    name: 'радиус',    unit: '\\text{м}',                       d: [1, 0, 0] }
+    ] }
+];
+
+function render(t, display){
+  try { return katex.renderToString(t, { throwOnError: false, displayMode: !!display }); }
+  catch (e) { return t; }
+}
+function Tex(p){
+  return html`<span dangerouslySetInnerHTML=${{ __html: render(p.tex, p.display) }}></span>`;
+}
+
+function gcd(a, b){ a = Math.abs(a); b = Math.abs(b); while (b) { var t = a % b; a = b; b = t; } return a; }
+
+/* Сколько базовых размерностей вообще участвует в наборе: k из теоремы.
+   Безразмерная величина (угол) в k не добавляет ничего — потому и оказывается
+   лишней ручкой. */
+function baseCount(set){
+  return BASE.filter(function (_, i) {
+    return set.q.some(function (q) { return q.d[i] !== 0; });
+  }).length;
+}
+
+function totals(set, exp){
+  return BASE.map(function (_, i) {
+    return set.q.reduce(function (s, q, j) { return s + exp[j] * q.d[i]; }, 0);
+  });
+}
+
+/* Комбинация дробью: положительные степени в числитель, отрицательные
+   в знаменатель. Так ответ читается формулой, а не списком степеней. */
+function texFormula(set, exp){
+  var num = [], den = [];
+  set.q.forEach(function (q, i) {
+    var e = exp[i];
+    if (!e) return;
+    var s = q.tex + (Math.abs(e) > 1 ? '^{' + Math.abs(e) + '}' : '');
+    (e > 0 ? num : den).push(s);
+  });
+  if (!num.length) num.push('1');
+  var top = num.join(' \\, ');
+  return den.length ? '\\dfrac{' + top + '}{' + den.join(' \\, ') + '}' : top;
+}
+
+function Konstruktor(){
+  var [si, setSi] = useState(0);
+  var [exp, setExp] = useState([0, 0, 0, 0]);
+
+  var set = SETS[si];
+  var tot = totals(set, exp);
+  var trivial = exp.every(function (e) { return e === 0; });
+  var done = tot.every(function (v) { return v === 0; }) && !trivial;
+
+  /* Степень всей комбинации: квадрат — та же ручка, а не вторая.
+     Делим показатели на общий делитель и говорим это вслух. */
+  var g = exp.reduce(function (a, e) { return gcd(a, e); }, 0) || 1;
+  var basis = exp.map(function (e) { return e / g; });
+  var body = texFormula(set, basis);
+  var full = g > 1 ? '\\left(' + body + '\\right)^{' + g + '}' : body;
+
+  var N = set.q.length, k = baseCount(set);
+
+  function bump(i, dv){
+    setExp(function (prev) {
+      var next = prev.slice();
+      next[i] = C.clamp(next[i] + dv, -LIM, LIM);
+      return next;
+    });
+  }
+  function load(i){ setSi(i); setExp(SETS[i].q.map(function () { return 0; })); }
+  function reset(){ setExp(set.q.map(function () { return 0; })); }
+
+  window.__demoState = { set: set.id, exp: exp, totals: tot, done: done,
+                         N: N, k: k, ручек: N - k,
+                         комбинация: done ? full : null, степень: g };
+
+  return html`
+    <div class="demo">
+      <div class="controls">
+        <${C.Group} label="Набор:">
+          ${SETS.map(function (s, i) { return html`
+            <${C.Btn} key=${s.id} active=${si === i} onClick=${function(){ load(i); }}>${s.label}<//>`; })}
+        <//>
+        ${set.q.map(function (q, i) { return html`
+          <${C.Group} key=${q.name} cls="step">
+            <${C.Btn} onClick=${function(){ bump(i, -1); }}>−<//>
+            <span class="control-value"><${Tex} tex=${q.tex + '^{' + exp[i] + '}'} /></span>
+            <${C.Btn} onClick=${function(){ bump(i, 1); }}>+<//>
+          <//>`; })}
+        <${C.Group}>
+          <${C.Btn} onClick=${reset}>Сбросить<//>
+        <//>
+      </div>
+
+      <div class="stage panel">
+        <div class="pi-count">
+          <${Tex} tex=${'\\underbrace{' + N + '}_{\\text{величин}} \\;-\\; ' +
+                        '\\underbrace{' + k + '}_{\\text{размерностей}} \\;=\\; ' +
+                        '\\underbrace{' + (N - k) + '}_{\\text{ручек}}'} />
+        </div>
+
+        <div class="pi-cards">
+          ${set.q.map(function (q, i) { return html`
+            <div class=${'pi-card' + (exp[i] ? ' is-on' : '')} key=${q.name}>
+              <span class="pi-sym"><${Tex} tex=${q.tex + '^{' + exp[i] + '}'} /></span>
+              <span class="pi-name">${q.name}</span>
+              <span class="pi-unit"><${Tex} tex=${q.unit} /></span>
+            </div>`; })}
+        </div>
+
+        <div class="pi-tallies">
+          ${BASE.map(function (b, i) { return html`
+            <div class=${'pi-tally' + (tot[i] === 0 ? ' is-zero' : '')} key=${b.name}>
+              <${Tex} tex=${b.tex + ' : ' + (tot[i] > 0 ? '+' : '') + tot[i]} />
+            </div>`; })}
+        </div>
+
+        <div class="pi-result">
+          ${done ? html`
+            <div class="pi-tag">ЕДИНИЦЫ СОКРАТИЛИСЬ</div>
+            <div class="pi-formula"><${Tex} tex=${full} /></div>`
+          : html`
+            <div class="pi-hint">${trivial ? 'все степени по нулям: комбинации пока нет'
+                                           : 'единицы ещё не сократились'}</div>`}
+        </div>
+      </div>
+
+      <${C.Status} html=${set.say +
+        ' Метры, килограммы и секунды должны сократиться все сразу.'} />
+    </div>`;
+}
+
+C.mount(Konstruktor);
+</script>
+</body>
+</html>

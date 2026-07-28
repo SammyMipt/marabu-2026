@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="ru" class="bare turb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Маятник над планетой</title>
+<link rel="stylesheet" href="../shared/demo.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../shared/vendor/react.production.min.js"></script>
+<script src="../shared/vendor/react-dom.production.min.js"></script>
+<script src="../shared/vendor/htm.js"></script>
+<script src="../shared/demo-core.js"></script>
+<script>
+'use strict';
+var C = window.DemoCore, html = C.html;
+var useRef = React.useRef;
+
+/* Рисунок к слайду «От чего зависит период маятника?».
+
+   Не прибор и не опыт: ни кнопок, ни показаний, ни чисел. Зал в это время
+   называет величины вслух, а лектор открывает пункты списка — картинка
+   нужна, чтобы было на что смотреть, пока идёт обсуждение. Мерить будем
+   на следующем слайде, там для этого есть демка.
+
+   Под маятником планета. Тяжесть — одна из величин, которую зал должен
+   назвать сам, и планета внизу про неё напоминает, ничего не говоря словами:
+   груз висит не «вниз вообще», а к чему-то конкретному.
+
+   Качается по честному уравнению θ'' = −(g/L)·sin θ, как и demos/mayatnik.html:
+   в колоде не должно быть маятника, который на самом деле синусоида. */
+
+var W = 560, HGT = 380;
+var PIVOT = { x: 280, y: 40 };
+var ARM = 148;                       /* длина нити на картинке, px */
+var BOB = 15;
+var PL = { x: 280, y: 348, r: 118 }; /* планета: низ уходит за нижний край */
+
+var L = 1.2, G = 9.81;               /* метры и м/с²: период около 2,2 с */
+var TH0 = 22 * Math.PI / 180;
+var SUB = 8;
+
+function Kartinka(){
+  var st = useRef({ th: TH0, w: 0 }).current;
+
+  function step(dt){
+    var h = dt / SUB;
+    for (var i = 0; i < SUB; i++) {
+      st.w += -(G / L) * Math.sin(st.th) * h;
+      st.th += st.w * h;
+    }
+  }
+
+  /* Планета: освещена сверху слева, к дальнему краю уходит в тень,
+     по кромке светится атмосфера. Материки — просто пятна потемнее,
+     узнаваемой географии тут не нужно. */
+  function planet(ctx){
+    var x = PL.x, y = PL.y, r = PL.r;
+
+    C.glow(ctx, x, y, r * 1.5, '53,200,216', .14);
+
+    var g = ctx.createRadialGradient(x - r * .36, y - r * .4, r * .08, x, y, r);
+    g.addColorStop(0, '#7fdfe9');
+    g.addColorStop(.5, '#2b8797');
+    g.addColorStop(1, '#0d3540');
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283);
+    ctx.fillStyle = g; ctx.fill();
+
+    ctx.save();
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283); ctx.clip();
+    ctx.fillStyle = 'rgba(10,54,62,.5)';
+    ctx.beginPath(); ctx.ellipse(x - r * .34, y - r * .06, r * .34, r * .23, .55, 0, 6.283); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x + r * .3, y + r * .26, r * .28, r * .19, -.4, 0, 6.283); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x + r * .08, y - r * .5, r * .2, r * .12, .18, 0, 6.283); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(x - r * .5, y + r * .42, r * .18, r * .12, .3, 0, 6.283); ctx.fill();
+    ctx.restore();
+
+    ctx.strokeStyle = 'rgba(127,223,233,.5)';
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(x, y, r - 1, 0, 6.283); ctx.stroke();
+  }
+
+  function draw(ctx){
+    var x = PIVOT.x + Math.sin(st.th) * ARM;
+    var y = PIVOT.y + Math.cos(st.th) * ARM;
+
+    planet(ctx);
+
+    /* след размаха: докуда груз доходит и там останавливается */
+    ctx.save();
+    ctx.setLineDash([3, 9]);
+    ctx.strokeStyle = 'rgba(134,160,168,.32)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(PIVOT.x, PIVOT.y, ARM, Math.PI / 2 - TH0, Math.PI / 2 + TH0);
+    ctx.stroke();
+    ctx.restore();
+
+    /* подвес */
+    ctx.strokeStyle = 'rgba(134,160,168,.75)';
+    ctx.lineWidth = 5; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(PIVOT.x - 72, PIVOT.y); ctx.lineTo(PIVOT.x + 72, PIVOT.y); ctx.stroke();
+    ctx.lineWidth = 1.5;
+    for (var i = -3; i <= 3; i++) {
+      var hx = PIVOT.x + i * 21;
+      ctx.beginPath(); ctx.moveTo(hx, PIVOT.y - 3); ctx.lineTo(hx - 9, PIVOT.y - 15); ctx.stroke();
+    }
+
+    ctx.strokeStyle = '#86a0a8'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(PIVOT.x, PIVOT.y); ctx.lineTo(x, y); ctx.stroke();
+    ctx.beginPath(); ctx.arc(PIVOT.x, PIVOT.y, 5, 0, 6.283);
+    ctx.fillStyle = '#86a0a8'; ctx.fill();
+
+    /* груз */
+    C.glow(ctx, x, y, BOB * 2.6, '53,200,216', .3);
+    var bg = ctx.createRadialGradient(x - BOB * .35, y - BOB * .4, BOB * .1, x, y, BOB);
+    bg.addColorStop(0, '#9ceaf3');
+    bg.addColorStop(1, '#1f8fa0');
+    ctx.beginPath(); ctx.arc(x, y, BOB, 0, 6.283);
+    ctx.fillStyle = bg; ctx.fill();
+  }
+
+  var ref = C.useStage(W, HGT, step, draw);
+  window.__demoState = st;
+
+  return html`<canvas class="stage stage-plain" ref=${ref}></canvas>`;
+}
+
+C.mount(Kartinka);
+</script>
+</body>
+</html>

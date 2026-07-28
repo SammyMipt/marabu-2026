@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="ru" class="turb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Струйка: гладко, потом хаос</title>
+<link rel="stylesheet" href="../shared/demo.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../shared/vendor/react.production.min.js"></script>
+<script src="../shared/vendor/react-dom.production.min.js"></script>
+<script src="../shared/vendor/htm.js"></script>
+<script src="../shared/demo-core.js"></script>
+<script src="../shared/smoke.js"></script>
+<script>
+'use strict';
+var C = window.DemoCore, html = C.html;
+var useRef = React.useRef, useState = React.useState;
+
+/* Демка акта 0. Вся лекция в одной картинке: гладкий столбик срывается
+   в хаос, и точка срыва уезжает вниз, когда прибавляешь поток.
+   Физика струи — в shared/smoke.js, тот же код рисует фон титула. */
+
+var W = 1000, HGT = 430;
+
+function Struya(){
+  var smoke = useRef(null);
+  if (!smoke.current) smoke.current = window.makeSmoke({ width: W, height: HGT, flow: 1, srcX: 0.5 });
+  var st = smoke.current;
+
+  var [ui, setUi] = useState({ flow: 1, mark: true });
+  var markRef = useRef(true);
+
+  function setFlow(v){
+    st.flow = v;
+    setUi({ flow: v, mark: markRef.current });
+  }
+
+  function step(dt){ st.step(dt); }
+
+  function draw(ctx){
+    var base = HGT + 6, cx = W / 2;
+
+    /* палочка благовония */
+    ctx.strokeStyle = '#3d4d52'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(cx, HGT); ctx.lineTo(cx, HGT - 26); ctx.stroke();
+    C.glow(ctx, cx, HGT - 28, 12, '255,138,76', .7);
+    ctx.beginPath(); ctx.arc(cx, HGT - 28, 3.4, 0, 6.283);
+    ctx.fillStyle = '#ff8a4c'; ctx.fill();
+
+    st.draw(ctx, W, HGT, { tint: '198,232,238' });
+
+    if (!markRef.current) return;
+
+    /* Отметка срыва: докуда столбик держится гладким. Она ездит вверх-вниз
+       вместе с ползунком — это и есть ответ на вопрос зала. */
+    var hb = st.breakHeight();
+    var y = base - hb;
+    if (y > 24 && y < HGT - 34) {
+      ctx.save();
+      ctx.setLineDash([7, 8]);
+      ctx.strokeStyle = 'rgba(53,200,216,.55)'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(cx - 300, y); ctx.lineTo(cx + 300, y); ctx.stroke();
+      ctx.restore();
+      C.label(ctx, cx - 306, y - 10, 'здесь срывается', 19, '#35c8d8', 'right');
+      C.label(ctx, cx + 306, y + 26, 'ниже — гладко', 19, '#7c9399', 'left');
+    }
+
+    C.readout(ctx, W - 34, 34, 'ВЫСОТА СРЫВА', Math.round(hb));
+  }
+
+  var ref = C.useStage(W, HGT, step, draw);
+  window.__demoState = st;
+
+  return html`
+    <div class="demo">
+      <div class="controls">
+        <${C.Slider} label="Расход:" min=${0.7} max=${2.6} step=${0.05}
+                     value=${ui.flow} onChange=${setFlow}
+                     display=${ui.flow.toFixed(2) + '×'} />
+        <${C.Group}>
+          <${C.Btn} active=${ui.mark}
+                    onClick=${function(){ markRef.current = !markRef.current; setUi({flow: st.flow, mark: markRef.current}); }}>
+            Отметить срыв<//>
+          <${C.Btn} onClick=${function(){ st.reset(); }}>Сбросить<//>
+        <//>
+      </div>
+      <canvas class="stage" ref=${ref}></canvas>
+      <${C.Status} html=${
+        'Внизу дым идёт гладко, выше расходится волнами, а потом рвётся в клубы. ' +
+        'Прибавьте расход и посмотрите, куда уедет срыв.'} />
+    </div>`;
+}
+
+C.mount(Struya);
+</script>
+</body>
+</html>

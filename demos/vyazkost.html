@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ru" class="turb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Вязкость: слои скользят друг по другу</title>
+<link rel="stylesheet" href="../shared/vendor/katex/katex.min.css">
+<link rel="stylesheet" href="../shared/demo.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../shared/vendor/react.production.min.js"></script>
+<script src="../shared/vendor/react-dom.production.min.js"></script>
+<script src="../shared/vendor/htm.js"></script>
+<script src="../shared/vendor/katex/katex.min.js"></script>
+<script src="../shared/demo-core.js"></script>
+<script>
+'use strict';
+var C = window.DemoCore, html = C.html;
+var useRef = React.useRef, useState = React.useState;
+
+/* Что такое вязкость — картинкой, к слайду перед пи-теоремой.
+
+   Слой жидкости между двумя пластинами: нижняя стоит, верхнюю тянут.
+   Жидкость не едет целиком, она расслаивается — у дна прилипла и стоит,
+   у верха идёт с пластиной, между ними всё промежуточное. Каждый слой
+   нарисован рядом стрелок: длина стрелки и скорость её хода и есть
+   скорость слоя, а концы стрелок выстраиваются в наклонную прямую —
+   это профиль скорости.
+
+   ВАЖНОЕ РЕШЕНИЕ: скорость сдвига одна и та же для всех жидкостей, а
+   меняется СИЛА. Наоборот было бы честнее по ощущению («толкаем одинаково,
+   мёд стоит»), но нерисуемо: при одной силе вода едет в десять тысяч раз
+   быстрее мёда, и либо мёд замирает на весь показ, либо воду приходится
+   подделывать. Здесь картинка всегда живая, а разница уходит в стрелку и
+   в число: чтобы сдвигать мёд так же, надо тянуть в десять тысяч раз сильнее.
+   Это ровно то, что написано на слайде.
+
+   Значения вязкости справочные, около 20 °C; в планах лекций их нет. */
+
+/* Сцена широкая и низкая: слайд отдаёт демке всю ширину и мало высоты,
+   а картинка «две пластины и слой между ними» именно такой формы. Если
+   держать канву квадратнее, она вписывается по высоте и оставляет по краям
+   пустые поля в две ладони. */
+var W = 1180, HGT = 256;
+
+var CELL = { x0: 40, x1: 780, yTop: 62, yBot: 208, plate: 16 };
+var H_GAP = CELL.yBot - CELL.yTop;
+
+/* Слои жидкости: ряды стрелок. Длина стрелки и скорость её хода — это
+   скорость слоя, а она растёт линейно от нижней пластины к верхней.
+   Внизу жидкость прилипла и стоит, вверху идёт вместе с пластиной. */
+var LAYERS = 9, SPACING = 148;
+function frac(k){ return k / (LAYERS - 1); }
+function layerY(k){ return CELL.yBot - 10 - (H_GAP - 20) * frac(k); }
+
+/* mu — динамическая вязкость, Па·с */
+var FLUIDS = [
+  { id: 'air',  label: 'Воздух',   mu: 1.8e-5, tex: '1{,}8 \\cdot 10^{-5}' },
+  { id: 'water', label: 'Вода',    mu: 1.0e-3, tex: '10^{-3}' },
+  { id: 'glyc', label: 'Глицерин', mu: 1.4,    tex: '1{,}4' },
+  { id: 'honey', label: 'Мёд',     mu: 10,     tex: '10' }
+];
+var WATER = 1.0e-3;
+
+var LAD = { x: 890, yLo: 226, yHi: 50, loD: -5, hiD: 1 };   /* лестница вязкости, декады */
+function ladY(mu){
+  var d = Math.log(mu) / Math.LN10;
+  return LAD.yLo - (d - LAD.loD) / (LAD.hiD - LAD.loD) * (LAD.yLo - LAD.yHi);
+}
+
+var SUP = { '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+            '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+function sup(n){ return String(n).split('').map(function(c){ return SUP[c] || c; }).join(''); }
+
+/* 10000 → «10 000»: неразрывные пробелы по три знака */
+function spaced(n){
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+/* Сравнение всегда с водой: она у зала эталон «обычной» жидкости.
+   Сама вода сравнивается сама с собой, и об этом надо сказать словами,
+   а не выдавать «в 1 раз сильнее». */
+function ratioWords(mu){
+  var r = mu / WATER;
+  if (Math.abs(r - 1) < 0.01) return { same: true, n: '1', word: 'как вода' };
+  if (r > 1) return { n: spaced(Math.round(r)), word: 'сильнее' };
+  return { n: spaced(Math.round(1 / r)), word: 'слабее' };
+}
+
+function tex(t){
+  try { return katex.renderToString(t, { throwOnError: false }); }
+  catch (e) { return t; }
+}
+
+function Vyazkost(){
+  var st = useRef({ fi: 1, rate: 1.2, phase: [], t: 0, shift: 0 }).current;
+  while (st.phase.length < LAYERS) st.phase.push(0);
+  var [ui, setUi] = useState({ fi: 1, rate: 1.2 });
+
+  var fluid = FLUIDS[st.fi];
+
+  function step(dt){
+    st.t += dt;
+    var V = st.rate * H_GAP;                 /* скорость верхней пластины, px/с */
+    for (var k = 0; k < LAYERS; k++) {
+      st.phase[k] = (st.phase[k] + V * frac(k) * dt) % SPACING;
+    }
+    st.shift += V * dt;                      /* штриховка верхней пластины едет с ней */
+  }
+
+  /* Стрелка потока. Короткая вырождается в точку: у самой нижней пластины
+     жидкость не движется, и рисовать ей стрелку было бы неправдой. */
+  function flowArrow(ctx, x, y, len, a){
+    var col = 'rgba(53,200,216,' + a.toFixed(3) + ')';
+    var head = 9;
+    if (len < head + 3) {
+      ctx.beginPath(); ctx.arc(x, y, 3, 0, 6.283);
+      ctx.fillStyle = col; ctx.fill();
+      return;
+    }
+    ctx.strokeStyle = col; ctx.lineWidth = 3.2; ctx.lineCap = 'butt';
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + len - head, y); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(x + len, y);
+    ctx.lineTo(x + len - head, y - 5.5);
+    ctx.lineTo(x + len - head, y + 5.5);
+    ctx.closePath(); ctx.fillStyle = col; ctx.fill();
+  }
+
+  function plate(ctx, y, moving){
+    ctx.fillStyle = '#16323a';
+    C.roundRect(ctx, CELL.x0, y, CELL.x1 - CELL.x0, CELL.plate, 4);
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(230,241,244,.22)'; ctx.lineWidth = 1.4; ctx.stroke();
+
+    ctx.save();
+    ctx.beginPath(); ctx.rect(CELL.x0, y, CELL.x1 - CELL.x0, CELL.plate); ctx.clip();
+    ctx.strokeStyle = 'rgba(230,241,244,.22)'; ctx.lineWidth = 1.4;
+    var off = moving ? (st.shift || 0) % 18 : 0;
+    for (var x = CELL.x0 - 18 + off; x < CELL.x1 + 18; x += 18) {
+      ctx.beginPath(); ctx.moveTo(x, y + CELL.plate); ctx.lineTo(x + 10, y); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  function draw(ctx){
+    var V = st.rate * H_GAP;
+    var tau = fluid.mu * st.rate;            /* Па: напряжение, которое нужно держать */
+
+    /* поле жидкости */
+    ctx.fillStyle = 'rgba(53,200,216,.05)';
+    ctx.fillRect(CELL.x0, CELL.yTop, CELL.x1 - CELL.x0, H_GAP);
+
+    /* Стрелки слоями: чем выше, тем длиннее и тем быстрее едут. Их концы
+       выстраиваются в наклонную прямую — это и есть профиль скорости. */
+    for (var k = 0; k < LAYERS; k++) {
+      var f = frac(k), yk = layerY(k), len = 8 + 46 * f, a = 0.42 + 0.42 * f;
+      for (var x = CELL.x0 + 22 + st.phase[k] - SPACING; x < CELL.x1 - 14; x += SPACING) {
+        if (x < CELL.x0 + 14 || x + len > CELL.x1 - 14) continue;
+        flowArrow(ctx, x, yk, len, a);
+      }
+    }
+
+    plate(ctx, CELL.yTop - CELL.plate, true);
+    plate(ctx, CELL.yBot, false);
+
+    /* стрелка тяги: толщина по порядку величины силы, а не по ней самой —
+       иначе воздух и мёд не помещаются на одной картинке */
+    var lg = Math.log(tau) / Math.LN10;
+    var thick = C.clamp(3 + (lg + 5) * 2.7, 3, 20);
+    var ay = CELL.yTop - CELL.plate - 20;
+    var tipX = CELL.x0 + 268, headLen = 22 + thick * .5;
+    /* Торец древка обязан быть плоским: с круглым он вылезал полукругом
+       из-под навершия и читался как посторонний кружок за стрелкой. */
+    ctx.strokeStyle = '#ffb454'; ctx.lineWidth = thick; ctx.lineCap = 'butt';
+    ctx.beginPath(); ctx.moveTo(CELL.x0 + 60, ay); ctx.lineTo(tipX - headLen, ay); ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(tipX, ay);
+    ctx.lineTo(tipX - headLen, ay - thick * .5 - 10);
+    ctx.lineTo(tipX - headLen, ay + thick * .5 + 10);
+    ctx.closePath(); ctx.fillStyle = '#ffb454'; ctx.fill();
+    C.label(ctx, tipX + 22, ay + 7, 'тянем', 20, '#ffb454', 'left');
+
+    C.label(ctx, CELL.x0, CELL.yBot + CELL.plate + 22, 'нижняя пластина стоит', 19, '#7c9399', 'left');
+    C.label(ctx, CELL.x1, CELL.yTop - CELL.plate - 6, 'верхняя пластина едет', 19, '#7c9399', 'right');
+
+    /* ── лестница вязкости: четыре жидкости на логарифмической оси ── */
+    ctx.strokeStyle = 'rgba(230,241,244,.2)'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(LAD.x, LAD.yHi - 12); ctx.lineTo(LAD.x, LAD.yLo + 12); ctx.stroke();
+    for (var d = LAD.loD; d <= LAD.hiD; d++) {
+      var y = ladY(Math.pow(10, d));
+      ctx.beginPath(); ctx.moveTo(LAD.x - 7, y); ctx.lineTo(LAD.x, y); ctx.stroke();
+      C.label(ctx, LAD.x - 14, y + 6, '10' + sup(d), 16, '#5f7a80', 'right');
+    }
+    C.label(ctx, LAD.x + 4, LAD.yHi - 26, 'ВЯЗКОСТЬ, Па·с', 15, '#7c9399', 'left');
+
+    FLUIDS.forEach(function (f) {
+      var y = ladY(f.mu), on = f.id === fluid.id;
+      ctx.beginPath(); ctx.arc(LAD.x, y, on ? 7 : 4.5, 0, 6.283);
+      ctx.fillStyle = on ? '#35c8d8' : '#4a6a72'; ctx.fill();
+      if (on) C.glow(ctx, LAD.x, y, 22, '53,200,216', .5);
+      C.label(ctx, LAD.x + 18, y + 7, f.label, on ? 22 : 19, on ? '#e6f1f4' : '#6d888f', 'left');
+    });
+
+    /* Приборных показаний здесь нет намеренно: во сколько раз тяжелее воды —
+       это мысль, а не измерение, и её место в строке снизу. Толщина стрелки
+       ту же разницу уже показывает, второй раз цифрой она не нужна. */
+  }
+
+  function pick(i){ st.fi = i; setUi({ fi: i, rate: st.rate }); }
+  function setRate(v){ st.rate = v; setUi({ fi: st.fi, rate: v }); }
+
+  var ref = C.useStage(W, HGT, step, draw);
+  window.__demoState = st;
+
+  var r = ratioWords(fluid.mu);
+  return html`
+    <div class="demo">
+      <div class="controls">
+        <${C.Group} label="Жидкость:">
+          ${FLUIDS.map(function (f, i) { return html`
+            <${C.Btn} key=${f.id} active=${ui.fi === i} onClick=${function(){ pick(i); }}>${f.label}<//>`; })}
+        <//>
+        <${C.Slider} label="Тянем быстрее:" min=${0.4} max=${4} step=${0.1}
+                     value=${ui.rate} onChange=${setRate}
+                     display=${ui.rate.toFixed(1).replace('.', ',') + '×'} />
+      </div>
+      <canvas class="stage" ref=${ref}></canvas>
+      <${C.Status} html=${
+        tex('\\mu = ' + fluid.tex + '\\ \\text{Па}\\cdot\\text{с}') + ', а ' +
+        tex('\\text{Па}\\cdot\\text{с} = \\text{кг}/(\\text{м}\\cdot\\text{с})') +
+        (r.same ? '. Это привычная жидкость, с ней и сравниваем остальные.'
+                : '. Чтобы сдвигать так же быстро, тянуть надо в ' + r.n +
+                  ' раз ' + r.word + ', чем воду.')} />
+    </div>`;
+}
+
+C.mount(Vyazkost);
+</script>
+</body>
+</html>

@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="ru" class="turb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Маятник: от чего зависит период</title>
+<link rel="stylesheet" href="../shared/demo.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../shared/vendor/react.production.min.js"></script>
+<script src="../shared/vendor/react-dom.production.min.js"></script>
+<script src="../shared/vendor/htm.js"></script>
+<script src="../shared/demo-core.js"></script>
+<script>
+'use strict';
+var C = window.DemoCore, html = C.html;
+var useRef = React.useRef, useState = React.useState;
+
+/* ══════════════════ физика ══════════════════
+
+   Честное уравнение маятника, без приближения малых углов:
+
+       θ'' = −(g/L)·sin θ
+
+   Массы в нём нет вообще — она сокращается, и это не упрощение, а точный
+   результат. Поэтому демка не «показывает», что масса не влияет: она
+   физически не может показать обратного.
+
+   Основные сценарии идут на малых размахах (14°), где период от размаха
+   практически не зависит — иначе лишняя поправка мешает увидеть главное.
+   Большой размах вынесен в отдельный сценарий: он нужен ровно один раз,
+   на слайде про границы метода. */
+
+var G_EARTH = 9.81, G_MOON = 1.62;
+var SUB = 8;                     /* подшагов на кадр: период должен держаться точно */
+
+function makeBob(m, L, deg, g){
+  return { m: m, L: L, g: g || G_EARTH, th: deg * Math.PI / 180, w: 0,
+           th0: deg * Math.PI / 180, t: 0, period: 0, prevW: 0 };
+}
+
+/* Период снимается по СМЕНЕ ЗНАКА СКОРОСТИ, то есть от крайней точки до
+   крайней. Это полпериода, и первая же половина отсчитывается от старта:
+   груз отпускают из крайнего положения. Раньше ждали возврата в ту же
+   сторону и период появлялся спустя полтора периода — на Луне это восемь
+   секунд, и лектор успевал переключить сценарий до того, как опыт
+   записывался в журнал.
+
+   Момент пересечения берём с интерполяцией внутри подшага: без неё
+   отношение 2,00 у вчетверо длинного маятника показывалось то 1,99, то 2,01. */
+function stepBob(b, dt){
+  var h = dt / SUB;
+  for (var i = 0; i < SUB; i++) {
+    b.w += -(b.g / b.L) * Math.sin(b.th) * h;
+    b.th += b.w * h;
+    b.t += h;
+    if ((b.prevW < 0 && b.w >= 0) || (b.prevW > 0 && b.w <= 0)) {
+      var tail = h * (b.w / (b.w - b.prevW));   /* сколько шага уже после разворота */
+      b.period = 2 * (b.t - tail);
+      b.t = tail;
+    }
+    b.prevW = b.w;
+  }
+}
+
+/* Русский разделитель: в журнале рядом стоят «× 4» и измеренное значение,
+   и точка посреди запятых читается как чужая. */
+function num(v, d){ return v.toFixed(d).replace('.', ','); }
+
+var W = 1000, HGT = 430;
+var PIVOT_Y = 46;
+var TBL = { x: 604, y: 40, w: 372 };        /* таблица опытов справа */
+
+var SMALL = 14;                             /* «малый» размах, градусы */
+
+/* Масштаб выбирается под самый длинный маятник сцены, чтобы он не залезал
+   на подписи. Оба маятника опыта считаются в одном масштабе, поэтому
+   отношение длин зал видит глазом честно. */
+function scaleFor(s){ return Math.min(118, 250 / Math.max(s.a.L, s.b.L)); }
+
+/* Числа подобраны так, чтобы отношение читалось без калькулятора: вчетверо
+   длиннее даёт ровно вдвое дольше, и корень виден прямо в журнале. */
+var SCEN = [
+  { id:'mass', label:'Разная масса', what:'масса', times:'× 5',
+    a:{ m:1, L:1.2, deg:SMALL }, b:{ m:5, L:1.2, deg:SMALL },
+    say:'Слева лёгкий груз, справа в пять раз тяжелее. Длина и размах одинаковые.' },
+  { id:'len', label:'Разная длина', what:'длина', times:'× 4',
+    a:{ m:2, L:0.6, deg:SMALL }, b:{ m:2, L:2.4, deg:SMALL },
+    say:'Теперь отличается только длина нити: справа вчетверо длиннее.' },
+  { id:'grav', label:'Другая планета', what:'тяжесть', times:'× 0,17',
+    a:{ m:2, L:1.2, deg:SMALL }, b:{ m:2, L:1.2, deg:SMALL, g:G_MOON },
+    say:'Справа тот же маятник, но на Луне: там тяжесть в шесть раз слабее.' },
+  { id:'ampl', label:'Большой размах', what:'размах', times:'× 5',
+    a:{ m:2, L:1.2, deg:SMALL }, b:{ m:2, L:1.2, deg:70 },
+    say:'Слева малый размах, справа большой. Вот единственное, что размерности не ловят.' }
+];
+
+/* Опыты, без которых вывод под таблицей не имеет права появиться: он
+   утверждает и про массу, и про длину, и про тяжесть. Размах сюда
+   не входит — он про границу метода, разговор о нём отдельный. */
+var VERDICT = ['mass', 'len', 'grav'];
+
+function Mayatnik(){
+  var st = useRef({ scen: 0, running: true, a: null, b: null, rows: [] }).current;
+  if (!st.a) { st.a = makeBob(1, 1.2, SMALL); st.b = makeBob(5, 1.2, SMALL); }
+
+  var [ui, setUi] = useState({ scen: 0, running: true });
+  var [status, setStatus] = useState(
+    'Два маятника отпускают одновременно. Что решает, кто вернётся первым?');
+
+  function load(i){
+    var s = SCEN[i];
+    st.scen = i;
+    st.a = makeBob(s.a.m, s.a.L, s.a.deg, s.a.g);
+    st.b = makeBob(s.b.m, s.b.L, s.b.deg, s.b.g);
+    setStatus(s.say);
+    setUi({ scen: i, running: st.running });
+  }
+
+  function done(id){ return st.rows.some(function(r){ return r.id === id; }); }
+
+  /* Строка в таблицу попадает, только когда оба периода реально измерены:
+     таблица — журнал опытов, а не подпись к сценарию. */
+  function record(){
+    var s = SCEN[st.scen];
+    if (done(s.id)) return;
+    if (!st.a.period || !st.b.period) return;
+    st.rows.push({ id: s.id, what: s.what, times: s.times,
+                   ratio: st.b.period / st.a.period });
+  }
+
+  function step(dt){
+    if (!st.running) return;
+    stepBob(st.a, dt);
+    stepBob(st.b, dt);
+    record();
+  }
+
+  function drawBob(ctx, b, cx, tag, sc){
+    var x = cx + Math.sin(b.th) * b.L * sc;
+    var y = PIVOT_Y + Math.cos(b.th) * b.L * sc;
+
+    ctx.save();
+    ctx.setLineDash([4, 7]); ctx.strokeStyle = 'rgba(124,147,153,.32)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(cx, PIVOT_Y, b.L * sc, Math.PI/2 - b.th0, Math.PI/2 + b.th0);
+    ctx.stroke(); ctx.restore();
+
+    ctx.strokeStyle = '#7c9399'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx, PIVOT_Y); ctx.lineTo(x, y); ctx.stroke();
+    ctx.beginPath(); ctx.arc(cx, PIVOT_Y, 5, 0, 6.283); ctx.fillStyle = '#7c9399'; ctx.fill();
+
+    var r = 10 + Math.cbrt(b.m) * 5;        /* размер по массе — на период это не влияет */
+    C.glow(ctx, x, y, r * 1.9, '53,200,216', .32);
+    ctx.beginPath(); ctx.arc(x, y, r, 0, 6.283);
+    ctx.fillStyle = '#35c8d8'; ctx.fill();
+
+    C.label(ctx, cx, PIVOT_Y - 20, tag, 19, '#7c9399');
+    var moon = b.g < 5;
+    C.label(ctx, cx, HGT - 74, b.m + ' кг · ' + num(b.L, 1) + ' м', 19, '#8fb2b8');
+    C.label(ctx, cx, HGT - 50, 'размах ' + Math.round(b.th0 * 180 / Math.PI) + '°' +
+                               (moon ? ' · Луна' : ''), 19, moon ? '#35c8d8' : '#8fb2b8');
+    /* Пока первый разворот не случился, периода ещё нет: показываем это
+       прямо, а не нулём, который выглядит измеренным значением. */
+    if (b.period) C.label(ctx, cx, HGT - 22, num(b.period, 2) + ' с', 26, '#ffffff');
+    else C.label(ctx, cx, HGT - 22, 'меряем…', 22, '#7c9399');
+  }
+
+  function drawTable(ctx){
+    var x = TBL.x, y = TBL.y;
+    C.label(ctx, x, y, 'ЖУРНАЛ ОПЫТОВ', 15, '#7c9399', 'left');
+    y += 26;
+    ctx.strokeStyle = 'rgba(230,241,244,.14)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + TBL.w, y); ctx.stroke();
+    y += 26;
+    C.label(ctx, x, y, 'что меняли', 17, '#7c9399', 'left');
+    C.label(ctx, x + 190, y, 'во сколько', 17, '#7c9399', 'left');
+    C.label(ctx, x + TBL.w, y, 'период', 17, '#7c9399', 'right');
+    y += 12;
+
+    st.rows.forEach(function(r){
+      y += 34;
+      var same = Math.abs(r.ratio - 1) < 0.02;
+      C.label(ctx, x, y, r.what, 21, '#e6f1f4', 'left');
+      C.label(ctx, x + 190, y, r.times, 21, '#8fb2b8', 'left');
+      C.label(ctx, x + TBL.w, y, same ? 'не изменился' : '× ' + num(r.ratio, 2),
+              21, same ? '#35c8d8' : '#ffb454', 'right');
+    });
+
+    /* Текущий опыт, пока замер не закончен: строка видна сразу и погашена.
+       Иначе переключение сценария выглядит так, будто журнал его потерял. */
+    var cur = SCEN[st.scen];
+    if (!done(cur.id)) {
+      y += 34;
+      C.label(ctx, x, y, cur.what, 21, 'rgba(230,241,244,.4)', 'left');
+      C.label(ctx, x + 190, y, cur.times, 21, 'rgba(143,178,184,.4)', 'left');
+      C.label(ctx, x + TBL.w, y, 'идёт замер', 19, 'rgba(124,147,153,.75)', 'right');
+    }
+
+    /* Вывод говорит ровно про то, что уже намерено, и ни слова сверх.
+       Раньше хватало любых трёх строк: можно было намерить массу, размах
+       и тяжесть и получить готовое утверждение про длину, которую никто
+       не проверял. Теперь ждём именно массу, длину и тяжесть.
+
+       А когда доходит очередь до размаха, слово «только» становится
+       неправдой: размах период меняет, пусть и на проценты. Поэтому вывод
+       переписывается сам — и это ровно тот поворот, ради которого
+       на слайде про границы метода сюда возвращаются. */
+    if (VERDICT.every(done)) {
+      y += 44;
+      ctx.strokeStyle = 'rgba(230,241,244,.14)';
+      ctx.beginPath(); ctx.moveTo(x, y - 22); ctx.lineTo(x + TBL.w, y - 22); ctx.stroke();
+      C.label(ctx, x, y, done('ampl') ? 'длина и тяжесть решают, размах уточняет'
+                                      : 'период слушает только длину и тяжесть',
+              19, '#35c8d8', 'left');
+    }
+  }
+
+  function draw(ctx){
+    var sc = scaleFor(SCEN[st.scen]);
+    drawBob(ctx, st.a, 170, 'A', sc);
+    drawBob(ctx, st.b, 420, 'B', sc);
+    drawTable(ctx);
+  }
+
+  var ref = C.useStage(W, HGT, step, draw);
+  window.__demoState = st;
+
+  return html`
+    <div class="demo">
+      <div class="controls">
+        <${C.Group} label="Опыт:">
+          ${SCEN.map(function(s, i){ return html`
+            <${C.Btn} key=${s.id} active=${ui.scen === i} onClick=${function(){ load(i); }}>${s.label}<//>`; })}
+        <//>
+        <${C.Group}>
+          <${C.Btn} action=${true}
+                    onClick=${function(){ st.running = !st.running; setUi({scen: st.scen, running: st.running}); }}>
+            ${ui.running ? 'Пауза' : 'Пуск'}<//>
+          <${C.Btn} onClick=${function(){ st.rows = []; load(st.scen); }}>Очистить журнал<//>
+        <//>
+      </div>
+      <canvas class="stage" ref=${ref}></canvas>
+      <${C.Status} html=${status} />
+    </div>`;
+}
+
+C.mount(Mayatnik);
+</script>
+</body>
+</html>
