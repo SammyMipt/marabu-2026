@@ -203,7 +203,7 @@ html, body, #root {
    канва остаётся одна. Сетка со сцены тоже уходит — она означает
    измерительное поле, а мерить здесь нечего. */
 
-.bare, .bare body, .bare #root { background: transparent; }
+.bare, .bare body, .bare #root { background: var(--bg); }
 /* .stage растянут через flex:1, и без flex-контейнера канва свернулась бы
    в дефолтные 150 px: в .demo это делала обвязка, здесь делать некому. */
 .bare #root { display: flex; }

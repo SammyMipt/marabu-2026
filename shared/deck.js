@@ -245,12 +245,18 @@
     }
   };
 
-  /* Кикер вида «ШАГ 3 · ВАУ» разбирается на номер беата и фазу: номер
-     оформляется отдельно, а первый слайд каждого беата получает класс
-     beat-start — по нему тема даёт «прогрев экрана». */
+  /* Кикер вида «ШАГ 3 · ВАУ» или «АКТ 2 · ИМЯ» разбирается на номер беата
+     и фазу: номер оформляется отдельно, а первый слайд каждого беата получает
+     класс beat-start — по нему тема даёт «прогрев экрана».
+
+     Слово берём из самого кикера. Раньше шаблон знал только «ШАГ», и вся
+     механика ритма молча не включалась на «Турбулентности»: без data-beat
+     каждый переход считался переходом ВНУТРИ беата, поэтому луч развёртки
+     не срабатывал ни разу и колода честно перещёлкивалась. */
   function kickerParts(text) {
-    var m = /^\s*ШАГ\s+(\d+)\s*·\s*(.+)$/i.exec(text || '');
-    return m ? { step: m[1], phase: m[2] } : { step: null, phase: text };
+    var m = /^\s*(ШАГ|АКТ)\s+(\d+)\s*·\s*(.+)$/i.exec(text || '');
+    return m ? { word: m[1].toUpperCase(), step: m[2], phase: m[3] }
+             : { word: null, step: null, phase: text };
   }
 
   var seenBeat = null;
@@ -262,7 +268,11 @@
     if (sl.type === 'title' || sl.type === 'closing') {
       s.className = 'slide-accent slide-' + sl.type;
       seenBeat = null; /* после разворота следующий беат снова «прогревается» */
-      inner.appendChild(el('h1', 'accent-title', sl.title));
+      var h1 = el('h1', 'accent-title', sl.title);
+      /* Копия текста в атрибуте: палитра «Турбулентности» рисует ею дымку
+         (::after content: attr(data-text)). Оформление, на смысл не влияет. */
+      h1.setAttribute('data-text', h1.textContent);
+      inner.appendChild(h1);
       if (sl.subtitle) inner.appendChild(el('p', 'accent-subtitle', sl.subtitle));
       if (sl.tag) inner.appendChild(el('p', 'accent-tag', sl.tag));
     } else {
@@ -272,7 +282,7 @@
         var kp = kickerParts(sl.kicker);
         var k = el('p', 'kicker');
         if (kp.step) {
-          k.appendChild(el('span', 'kicker-step', 'ШАГ ' + kp.step));
+          k.appendChild(el('span', 'kicker-step', kp.word + ' ' + kp.step));
           if (kp.step !== seenBeat) { s.classList.add('beat-start'); seenBeat = kp.step; }
           s.setAttribute('data-beat', kp.step);
         }
@@ -363,7 +373,7 @@
   }
 
   function animateSlide(section, forward) {
-    if (!section || PLAIN) return;   /* простая колода листается без затей */
+    if (!section) return;
     var prev = section.previousElementSibling;
     var beat = section.getAttribute('data-beat');
     var sameBeat = !!beat && !!prev && prev.getAttribute('data-beat') === beat

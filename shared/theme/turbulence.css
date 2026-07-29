@@ -17,3 +17,144 @@
   --screen: #040d10;
   --scan: .04;
 }
+
+/* ---------- поправки вёрстки под эту лекцию ----------
+
+   Обе живут здесь, а не в base.css: «Электрон» уже отсмотрен и утверждён,
+   и трогать его вид из-за второй лекции нельзя. turbulence.css грузится
+   после base.css только в этой колоде. */
+
+/* Карточки обнимают текст. По умолчанию блок сравнения растягивается на всю
+   свободную высоту, а текст в карточке стоит по центру: у «Электрона» над
+   ними почти всегда есть список, и остатка мало. Здесь сравнение часто
+   единственный блок на слайде — и три строки плавали в середине плашки
+   высотой в пол-экрана. */
+.blk-compare { flex: 0 0 auto; }
+.compare-col { justify-content: flex-start; }
+
+/* Сквозное течение: полоса под контентом, поверх слайда, под развёрткой —
+   ровно там же, где у «Электрона» живёт его электрон. */
+.flow-lane {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 1280px;
+  height: 720px;
+  z-index: 58;
+  pointer-events: none;
+}
+
+/* ---------- переход между актами ----------
+
+   У «Электрона» кадр рисует луч кадровой развёртки — метафора трубки.
+   Здесь метафора другая: содержимое ПРИНОСИТ поток. Тот же приём и та же
+   роль (переход между беатами читается как событие, внутри беата шапка
+   стоит), но ход горизонтальный и мягкий, как течение.
+
+   Луч из base.css превращаем в набегающий фронт: вертикальная мягкая
+   полоса идёт слева направо, и содержимое открывается ровно там, где она
+   прошла. Длительности и easing совпадают с маской — фронт не украшение
+   перехода, а его причина. */
+
+.frame-scan {
+  left: 0;
+  top: 0;
+  width: 260px;
+  height: 720px;
+  background: linear-gradient(to right,
+    transparent,
+    rgba(255, 255, 255, .012) 46%,
+    var(--glow) 92%,
+    var(--accent) 100%);
+}
+
+.frame-scan.on { animation: flow-front 620ms cubic-bezier(.32, 0, .3, 1); }
+.slide-title.scan-loop .frame-scan,
+.frame-scan.loop { display: none; }
+
+@keyframes flow-front {
+  from { transform: translateX(-260px); opacity: .8; }
+  to   { transform: translateX(1280px); opacity: .3; }
+}
+@keyframes flow-front-loop {
+  0%   { transform: translateX(-260px); opacity: 0; }
+  14%  { opacity: .42; }
+  86%  { opacity: .42; }
+  100% { transform: translateX(1280px); opacity: 0; }
+}
+
+/* Кадр открывает сам фронт: маска раскрывается слева направо синхронно
+   с его передней кромкой. Длительность и easing — те же. */
+.anim:not(.same-beat) .slide-inner {
+  animation: paint-across 620ms cubic-bezier(.32, 0, .3, 1) both;
+}
+
+@keyframes paint-across {
+  from { clip-path: inset(0 100% 0 0); }
+  to   { clip-path: inset(0 0 0 0); }
+}
+
+/* Титул: буквы расплываются в пятно и собираются обратно.
+
+   Ни градиенты, ни маска по глифам тут не нужны — работает сам текст.
+   Цикл 7.6 с: буквы стоят резко, потом теряют форму (размытие растёт,
+   строка чуть расползается по горизонтали, цвет уходит в акцент), на пике
+   это пятно без букв, затем всё собирается назад. Читаемость держится
+   паузами: почти треть цикла название стоит резким.
+
+   Никакой геометрии не считаем, поэтому эффект не зависит ни от масштаба
+   кадра, ни от гарнитуры, ни от переносов строк. */
+
+.slide-title .accent-title {
+  position: relative;
+  transform-origin: 12% 50%;
+  will-change: filter, transform;
+}
+
+.slide-title.scan-loop.present .accent-title {
+  animation: title-dissolve 7600ms cubic-bezier(.5, 0, .5, 1) infinite;
+}
+
+@keyframes title-dissolve {
+  0%, 16%   { filter: blur(0); transform: scaleX(1); color: var(--ink); }
+  40%       { filter: blur(11px); transform: scaleX(1.035); color: #b9e7ee; }
+  50%, 56%  { filter: blur(26px); transform: scaleX(1.06); color: var(--accent); }
+  74%       { filter: blur(8px); transform: scaleX(1.02); color: #cfeef3; }
+  88%, 100% { filter: blur(0); transform: scaleX(1); color: var(--ink); }
+}
+
+/* Подзаголовок и метка собираются вслед за названием, но мягче и позже —
+   иначе на пике весь титул превращается в кашу. */
+.slide-title.scan-loop.present .accent-subtitle,
+.slide-title.scan-loop.present .accent-tag {
+  animation: sub-dissolve 7600ms cubic-bezier(.5, 0, .5, 1) infinite;
+  animation-delay: 380ms !important;
+}
+.slide-title.scan-loop.present .accent-tag { animation-delay: 620ms !important; }
+
+@keyframes sub-dissolve {
+  0%, 22%   { filter: blur(0); opacity: 1; }
+  50%, 58%  { filter: blur(6px); opacity: .55; }
+  86%, 100% { filter: blur(0); opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .slide-title.scan-loop.present .accent-title,
+  .slide-title.scan-loop.present .accent-subtitle,
+  .slide-title.scan-loop.present .accent-tag { animation: none; }
+}
+
+/* В печати ни расплывания, ни размытия: на бумаге это просто грязь. */
+@media print {
+  .slide-title .accent-title,
+  .slide-title .accent-subtitle,
+  .slide-title .accent-tag {
+    animation: none;
+    filter: none;
+    color: var(--ink);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .frame-scan.on, .frame-scan.loop { animation: none; }
+}

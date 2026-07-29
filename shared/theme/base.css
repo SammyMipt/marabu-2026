@@ -605,20 +605,22 @@
    у обеих колод общие. */
 
 .deck-plain .reveal-viewport::after { display: none; }     /* сканлайны */
-.deck-plain .frame-scan { display: none; }                 /* луч развёртки */
+.deck-plain:not(.deck-flow) .frame-scan { display: none; }  /* луч развёртки */
 
 .deck-plain .formula-text,
 .deck-plain .accent-title { text-shadow: none; }
 
 .deck-plain .blk-formula { border-color: var(--line); }
 
-/* никакого прогрева и выезда: слайд просто появляется */
-.deck-plain .slide-inner,
-.deck-plain .slide-inner > *,
-.deck-plain .blocks > .blk,
-.deck-plain .accent-title,
-.deck-plain .accent-subtitle,
-.deck-plain .accent-tag {
+/* Никакого прогрева и выезда: слайд просто появляется. Исключение —
+   палитра со своим переходом (.deck-flow): она гасит не переход, а только
+   катодные украшения. */
+.deck-plain:not(.deck-flow) .slide-inner,
+.deck-plain:not(.deck-flow) .slide-inner > *,
+.deck-plain:not(.deck-flow) .blocks > .blk,
+.deck-plain:not(.deck-flow) .accent-title,
+.deck-plain:not(.deck-flow) .accent-subtitle,
+.deck-plain:not(.deck-flow) .accent-tag {
   animation: none !important;
   clip-path: none !important;
   opacity: 1 !important;
