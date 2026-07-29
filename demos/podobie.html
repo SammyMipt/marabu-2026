@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="ru" class="turb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Пять опытов на одной кривой</title>
+<link rel="stylesheet" href="../shared/vendor/katex/katex.min.css">
+<link rel="stylesheet" href="../shared/demo.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../shared/vendor/react.production.min.js"></script>
+<script src="../shared/vendor/react-dom.production.min.js"></script>
+<script src="../shared/vendor/htm.js"></script>
+<script src="../shared/vendor/katex/katex.min.js"></script>
+<script src="../shared/demo-core.js"></script>
+<script>
+'use strict';
+var C = window.DemoCore, html = C.html;
+var useRef = React.useRef, useState = React.useState;
+
+/* Гвоздь акта 2: пять опытов, у которых нет ничего общего, ложатся на одну
+   линию, стоит построить их по числу Рейнольдса.
+
+   Слева оси, в которых меряют: сила сопротивления против скорости. Пять
+   кривых, между крайними девять порядков. Жмём «по Рейнольдсу» — точки
+   перелетают в другие оси и садятся на одну кривую.
+
+   ЧЕСТНО ПРО ДАННЫЕ. Сводная кривая сопротивления шара собиралась по опытам
+   весь двадцатый век: сводку Лэппла и Шепарда (1940) делали усреднением
+   семнадцати независимых работ, Шлихтинг принял её как стандартную. Считаем
+   по корреляции Клифта и Говена (1971), которая эту сводку описывает; она
+   сверена с табличными значениями и совпадает с ними от Re = 1 до 10^5.
+   Точки на графике — то, что эта кривая предсказывает для пяти конкретных
+   тел, а не архивные измерения. В заметках слайда так и написано.
+
+   Левый край кривой — Стокс: при малых Re выходит ровно 24/Re. В акте 4
+   он вернётся с формулой, и хорошо, если зал вспомнит, что уже видел его. */
+
+var W = 1180, HGT = 450;
+var P = { x0: 112, x1: 880, y0: 34, y1: 386 };
+var LEG = { x: 916, y: 76, step: 46 };
+
+/* d — диаметр, м; rho и mu — среда; u0..u1 — разгон в опыте */
+var OBJ = [
+  { id:'dust',   label:'Пылинка',        note:'50 мкм · воздух',  d:50e-6, rho:1.2,  mu:1.8e-5, u0:0.02,  u1:0.6, col:'#ffb454' },
+  { id:'bead',   label:'Бусина',         note:'8 мм · глицерин',  d:8e-3,  rho:1260, mu:1.4,    u0:0.05,  u1:1.5, col:'#c78bff' },
+  { id:'ball',   label:'Шарик',          note:'3 мм · вода',      d:3e-3,  rho:1000, mu:1e-3,   u0:0.005, u1:0.4, col:'#7aa6ff' },
+  { id:'tennis', label:'Теннисный мяч',  note:'6,7 см · воздух',  d:0.067, rho:1.2,  mu:1.8e-5, u0:0.4,   u1:25,  col:'#5ce0a0' },
+  { id:'foot',   label:'Футбольный мяч', note:'22 см · воздух',   d:0.22,  rho:1.2,  mu:1.8e-5, u0:0.6,   u1:13,  col:'#35c8d8' }
+];
+
+/* Клифт и Говен, 1971. Первое слагаемое при малых Re вырождается в 24/Re —
+   это Стокс; второе включается на больших и выводит кривую на полку. */
+function cdOf(Re){
+  return 24 / Re * (1 + 0.15 * Math.pow(Re, 0.687)) +
+         0.42 / (1 + 42500 * Math.pow(Re, -1.16));
+}
+
+function lg(v){ return Math.log(v) / Math.LN10; }
+
+var AX = {
+  raw: { x:{lo:-2.5, hi:1.5}, y:{lo:-10, hi:1},
+         xt:'скорость, м/с', yt:'сопротивление, Н' },
+  re:  { x:{lo:-1.5, hi:5.5}, y:{lo:-0.6, hi:2.8},
+         xt:'число Рейнольдса', yt:'коэффициент сопротивления' }
+};
+
+var SUP = { '-':'⁻','0':'⁰','1':'¹','2':'²','3':'³','4':'⁴','5':'⁵','6':'⁶','7':'⁷','8':'⁸','9':'⁹' };
+function sup(n){ return String(n).split('').map(function(c){ return SUP[c] || c; }).join(''); }
+
+/* Точки опыта: по шестнадцать скоростей на логарифмической сетке.
+   Каждая несёт обе пары координат, между ними и идёт перелёт. */
+var PTS = OBJ.map(function (o) {
+  var a = o.rho * o.d / o.mu, area = Math.PI * o.d * o.d / 4, out = [];
+  for (var i = 0; i < 16; i++) {
+    var u = o.u0 * Math.pow(o.u1 / o.u0, i / 15);
+    var Re = a * u, cd = cdOf(Re);
+    var F = cd * 0.5 * o.rho * u * u * area;
+    out.push({ ux: lg(u), uy: lg(F), rx: lg(Re), ry: lg(cd) });
+  }
+  return out;
+});
+
+function Podobie(){
+  var st = useRef({ t: 0, target: 0, stokes: false }).current;
+  var [ui, setUi] = useState({ mode: 0, stokes: false });
+
+  function step(dt){
+    var d = st.target - st.t;
+    if (Math.abs(d) < 1e-4) { st.t = st.target; return; }
+    st.t += Math.sign(d) * Math.min(Math.abs(d), dt / 1.3);
+  }
+
+  function px(m, v){ var a = AX[m].x; return P.x0 + (v - a.lo) / (a.hi - a.lo) * (P.x1 - P.x0); }
+  function py(m, v){ var a = AX[m].y; return P.y1 - (v - a.lo) / (a.hi - a.lo) * (P.y1 - P.y0); }
+
+  /* Шаг подписей выбирается так, чтобы они не наезжали друг на друга:
+     у сырых осей одиннадцать декад по вертикали, все не подписать. */
+  function tickStep(lo, hi, room){
+    var n = Math.round(hi - lo);
+    return Math.max(1, Math.ceil(n / Math.max(1, Math.floor(room / 34))));
+  }
+
+  function axes(ctx, m, a){
+    if (a < 0.01) return;
+    var A = AX[m];
+    var sx = tickStep(A.x.lo, A.x.hi, P.x1 - P.x0);
+    var sy = tickStep(A.y.lo, A.y.hi, P.y1 - P.y0);
+
+    for (var d = Math.ceil(A.x.lo); d <= A.x.hi; d++) {
+      var x = px(m, d);
+      ctx.strokeStyle = 'rgba(230,241,244,' + (0.07 * a) + ')'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(x, P.y0); ctx.lineTo(x, P.y1); ctx.stroke();
+      if (d % sx === 0) C.label(ctx, x, P.y1 + 26, '10' + sup(d), 17, 'rgba(134,160,168,' + a + ')');
+    }
+    for (var e = Math.ceil(A.y.lo); e <= A.y.hi; e++) {
+      var y = py(m, e);
+      ctx.strokeStyle = 'rgba(230,241,244,' + (0.07 * a) + ')'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(P.x0, y); ctx.lineTo(P.x1, y); ctx.stroke();
+      if (e % sy === 0) C.label(ctx, P.x0 - 12, y + 6, '10' + sup(e), 17, 'rgba(134,160,168,' + a + ')', 'right');
+    }
+
+    ctx.strokeStyle = 'rgba(230,241,244,' + (0.3 * a) + ')'; ctx.lineWidth = 1.4;
+    ctx.beginPath();
+    ctx.moveTo(P.x0, P.y0); ctx.lineTo(P.x0, P.y1); ctx.lineTo(P.x1, P.y1);
+    ctx.stroke();
+
+    C.label(ctx, (P.x0 + P.x1) / 2, P.y1 + 54, A.xt, 19, 'rgba(143,178,184,' + a + ')');
+    ctx.save();
+    ctx.translate(P.x0 - 72, (P.y0 + P.y1) / 2);
+    ctx.rotate(-Math.PI / 2);
+    C.label(ctx, 0, 0, A.yt, 19, 'rgba(143,178,184,' + a + ')');
+    ctx.restore();
+  }
+
+  function curve(ctx, a){
+    if (a < 0.01) return;
+    ctx.strokeStyle = 'rgba(230,241,244,' + (0.5 * a) + ')';
+    ctx.lineWidth = 2.4; ctx.setLineDash([]);
+    ctx.beginPath();
+    for (var i = 0; i <= 200; i++) {
+      var l = AX.re.x.lo + (AX.re.x.hi - AX.re.x.lo) * i / 200;
+      var x = px('re', l), y = py('re', lg(cdOf(Math.pow(10, l))));
+      if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    }
+    ctx.stroke();
+
+    if (!st.stokes) return;
+    ctx.save();
+    ctx.setLineDash([8, 8]);
+    ctx.strokeStyle = 'rgba(255,180,84,' + (0.75 * a) + ')'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (var j = 0; j <= 60; j++) {
+      var l2 = AX.re.x.lo + 3.2 * j / 60;
+      var x2 = px('re', l2), y2 = py('re', lg(24 / Math.pow(10, l2)));
+      if (j) ctx.lineTo(x2, y2); else ctx.moveTo(x2, y2);
+    }
+    ctx.stroke();
+    ctx.restore();
+    C.label(ctx, px('re', 1.5) + 16, py('re', lg(24 / Math.pow(10, 1.5))) - 12,
+            '24 / Re — это Стокс', 18, 'rgba(255,180,84,' + a + ')', 'left');
+  }
+
+  function draw(ctx){
+    var t = C.ease(C.clamp(st.t, 0, 1));
+    var aRaw = C.clamp(1 - 2.2 * st.t, 0, 1);
+    var aRe = C.clamp(2.2 * st.t - 1.2, 0, 1);
+
+    axes(ctx, 'raw', aRaw);
+    axes(ctx, 're', aRe);
+    curve(ctx, aRe);
+
+    OBJ.forEach(function (o, k) {
+      var pts = PTS[k];
+      ctx.strokeStyle = o.col; ctx.lineWidth = 2.6; ctx.setLineDash([]);
+      ctx.beginPath();
+      pts.forEach(function (p, i) {
+        var x = C.lerp(px('raw', p.ux), px('re', p.rx), t);
+        var y = C.lerp(py('raw', p.uy), py('re', p.ry), t);
+        if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+      });
+      ctx.stroke();
+      pts.forEach(function (p) {
+        var x = C.lerp(px('raw', p.ux), px('re', p.rx), t);
+        var y = C.lerp(py('raw', p.uy), py('re', p.ry), t);
+        ctx.beginPath(); ctx.arc(x, y, 4.2, 0, 6.283);
+        ctx.fillStyle = o.col; ctx.fill();
+      });
+    });
+
+    OBJ.forEach(function (o, k) {
+      var y = LEG.y + k * LEG.step;
+      ctx.strokeStyle = o.col; ctx.lineWidth = 3.4; ctx.lineCap = 'round';
+      ctx.beginPath(); ctx.moveTo(LEG.x, y - 6); ctx.lineTo(LEG.x + 30, y - 6); ctx.stroke();
+      ctx.beginPath(); ctx.arc(LEG.x + 15, y - 6, 4.2, 0, 6.283);
+      ctx.fillStyle = o.col; ctx.fill();
+      C.label(ctx, LEG.x + 42, y, o.label, 20, '#e6f1f4', 'left');
+      C.label(ctx, LEG.x + 42, y + 20, o.note, 17, '#7c9399', 'left');
+    });
+  }
+
+  function setMode(m){
+    st.target = m;
+    setUi({ mode: m, stokes: st.stokes });
+  }
+
+  var ref = C.useStage(W, HGT, step, draw);
+  window.__demoState = st;
+  window.__demoPoints = PTS;
+
+  return html`
+    <div class="demo">
+      <div class="controls">
+        <${C.Group} label="Оси:">
+          <${C.Btn} active=${ui.mode === 0} onClick=${function(){ setMode(0); }}>Как меряют<//>
+          <${C.Btn} active=${ui.mode === 1} action=${true}
+                    onClick=${function(){ setMode(1); }}>По Рейнольдсу<//>
+        <//>
+        <${C.Group}>
+          <${C.Btn} active=${ui.stokes} disabled=${ui.mode === 0}
+                    onClick=${function(){ st.stokes = !st.stokes; setUi({mode: ui.mode, stokes: st.stokes}); }}>
+            Левый край<//>
+        <//>
+      </div>
+      <canvas class="stage" ref=${ref}></canvas>
+      <${C.Status} html=${ui.mode === 0
+        ? 'Сила сопротивления против скорости. Между пылинкой и футбольным мячом девять порядков, ' +
+          'и общего у этих кривых нет ничего.'
+        : 'Те же самые точки по числу Рейнольдса. Пылинка и футбольный мяч различаются в размере ' +
+          'в четыре тысячи раз, а сидят на одной линии.'} />
+    </div>`;
+}
+
+C.mount(Podobie);
+</script>
+</body>
+</html>
