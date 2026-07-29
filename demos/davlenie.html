@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="ru" class="turb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Давление: толкает перепад</title>
+<link rel="stylesheet" href="../shared/demo.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../shared/vendor/react.production.min.js"></script>
+<script src="../shared/vendor/react-dom.production.min.js"></script>
+<script src="../shared/vendor/htm.js"></script>
+<script src="../shared/demo-core.js"></script>
+<script>
+'use strict';
+var C = window.DemoCore, html = C.html;
+var useRef = React.useRef, useState = React.useState;
+
+/* Откуда в уравнении перепад давления, а не само давление.
+
+   Кубик воды со стороной в сантиметр. Со всех сторон на него давит
+   соседняя вода. Ползунок «давление вокруг» гонит его хоть до пятисот
+   атмосфер — стрелки растут во все стороны, а капля стоит: силы гасят
+   друг друга. Ползунок «перепад» добавляет к левой грани считанные
+   паскали, стрелки на глаз не отличить, и капля срывается с места.
+
+   Числа настоящие и в этом вся соль: на сотне атмосфер каждая грань
+   держит около тысячи ньютонов, разница между гранями — пять сотых
+   ньютона, и этой разницы хватает на разгон в пять g.
+
+   ЗАМЕДЛЕННАЯ СЪЁМКА. Капля летит по-настоящему, но при таком разгоне
+   она уходит за кадр за сотую долю секунды, и в реальном темпе виден
+   был бы только миг. Поэтому часы демки идут медленнее настоящих, и
+   во сколько именно раз — написано под каплей вместе с настоящим
+   прошедшим временем. Физика при этом не тронута: замедлен только
+   отсчёт, ускорение и путь считаются по-честному.
+
+   Коэффициент замедления подбирается так, чтобы пролёт занимал около
+   двух с половиной секунд при любом перепаде. Он же оказывается лишним
+   показанием: чем сильнее перепад, тем сильнее пришлось замедлять. */
+
+var W = 1180, HGT = 380;
+var CUBE = { x: 560, y: 168, s: 132 };
+var ATM = 101325;                 /* паскаль в атмосфере */
+var SIDE = 0.01;                  /* ребро кубика, м */
+var AREA = SIDE * SIDE;           /* 1e-4 м² */
+var MASS = 1000 * SIDE * SIDE * SIDE;   /* вода: 1 г */
+var G = 9.81;
+
+var PXM = CUBE.s / SIDE;          /* сантиметр нарисован в 132 px */
+var TRAVEL = (W + 70 - CUBE.x) / PXM;   /* сколько метров до выхода за кадр */
+var SHOW = 2.5;                   /* столько секунд должен занимать пролёт */
+
+/* Во сколько раз замедлить, чтобы пролёт уложился в SHOW секунд.
+   Путь равноускоренный, поэтому настоящее время — корень из 2s/a. */
+function slowdown(a){
+  return C.clamp(SHOW / Math.sqrt(2 * TRAVEL / a), 2, 400);
+}
+
+function len(p){ return 26 + p / (500 * ATM) * 236; }   /* длина стрелки по давлению */
+
+function arrow(ctx, x, y, dx, thick, col){
+  var head = 13 + thick * .4;
+  ctx.strokeStyle = col; ctx.lineWidth = thick; ctx.lineCap = 'butt';
+  ctx.beginPath();
+  ctx.moveTo(x, y); ctx.lineTo(x + dx - Math.sign(dx) * head, y); ctx.stroke();
+  ctx.beginPath();
+  ctx.moveTo(x + dx, y);
+  ctx.lineTo(x + dx - Math.sign(dx) * head, y - thick * .5 - 7);
+  ctx.lineTo(x + dx - Math.sign(dx) * head, y + thick * .5 + 7);
+  ctx.closePath(); ctx.fillStyle = col; ctx.fill();
+}
+
+function Davlenie(){
+  var st = useRef({ p: 100 * ATM, dp: 0,
+                    phase: 'stand', pos: 0, vel: 0, tSim: 0, k: 1, hold: 0 }).current;
+  var [ui, setUi] = useState({ p: 100, dp: 0 });
+
+  function accel(){ return st.dp * AREA / MASS; }
+
+  /* Цикл: постоять, разогнаться и уйти за кадр, вернуться, снова постоять.
+     Внутри полёта время течёт медленнее настоящего в st.k раз — на физику
+     это не влияет, шаг просто короче. */
+  function step(dt){
+    var a = accel();
+    if (a <= 0) { st.phase = 'stand'; st.pos = 0; st.vel = 0; st.tSim = 0; st.hold = 0; return; }
+
+    if (st.phase === 'stand') {
+      st.hold += dt;
+      if (st.hold > 1) { st.phase = 'run'; st.hold = 0; st.pos = 0; st.vel = 0; st.tSim = 0; st.k = slowdown(a); }
+      return;
+    }
+    if (st.phase === 'gone') {
+      st.hold += dt;
+      if (st.hold > 0.9) { st.phase = 'stand'; st.hold = 0; st.pos = 0; st.vel = 0; st.tSim = 0; }
+      return;
+    }
+
+    var ds = dt / st.k;
+    st.vel += a * ds;
+    st.pos += st.vel * ds;
+    st.tSim += ds;
+    if (st.pos > TRAVEL) { st.phase = 'gone'; st.hold = 0; }
+  }
+
+  function num(v, d){ return v.toFixed(d).replace('.', ','); }
+
+  function draw(ctx){
+    var pL = st.p + st.dp, pR = st.p;
+    var fL = pL * AREA, fR = pR * AREA, net = fL - fR;
+    var acc = net / MASS;
+
+    var cx = CUBE.x + st.pos * PXM, cy = CUBE.y, h = CUBE.s / 2;
+    var gone = st.phase === 'gone';
+
+    /* стрелки давления: слева и справа по три, сверху и снизу по две.
+       Длина по давлению, поэтому разницу между гранями глазом не поймать.
+       Едут вместе с каплей: это силы на неё, а не на точку экрана. */
+    var lenL = len(pL), lenR = len(pR), lenV = len(st.p);
+    if (!gone) [-1, 0, 1].forEach(function (k) {
+      var y = cy + k * 40;
+      arrow(ctx, cx - h - lenL, y, lenL - 6, 9, '#7aa6ff');
+      arrow(ctx, cx + h + lenR, y, -(lenR - 6), 9, '#7aa6ff');
+    });
+    if (!gone) [-1, 1].forEach(function (k) {
+      var x = cx + k * 40;
+      ctx.save(); ctx.translate(x, cy - h - lenV); ctx.rotate(Math.PI / 2);
+      arrow(ctx, 0, 0, lenV - 6, 9, '#7aa6ff'); ctx.restore();
+      ctx.save(); ctx.translate(x, cy + h + lenV); ctx.rotate(-Math.PI / 2);
+      arrow(ctx, 0, 0, lenV - 6, 9, '#7aa6ff'); ctx.restore();
+    });
+
+    /* сама капля */
+    if (!gone) {
+      var g = ctx.createLinearGradient(cx - h, cy - h, cx + h, cy + h);
+      g.addColorStop(0, 'rgba(53,200,216,.30)');
+      g.addColorStop(1, 'rgba(53,200,216,.14)');
+      C.roundRect(ctx, cx - h, cy - h, CUBE.s, CUBE.s, 10);
+      ctx.fillStyle = g; ctx.fill();
+      ctx.strokeStyle = 'rgba(53,200,216,.7)'; ctx.lineWidth = 2; ctx.stroke();
+      C.label(ctx, cx, cy - 6, 'капля воды', 19, '#cfe9ee');
+      C.label(ctx, cx, cy + 20, 'ребро 1 см', 17, '#7c9399');
+    }
+
+    /* равнодействующая: есть только когда есть перепад */
+    if (Math.abs(net) > 1e-9) {
+      if (!gone) {
+        var L = C.clamp(40 + Math.abs(net) / 0.05 * 150, 40, 200);
+        arrow(ctx, cx - L / 2, cy + h + 54, L, 13, '#ffb454');
+      }
+      /* Часы демки идут медленнее настоящих, и это надо сказать вслух:
+         иначе зал решит, что вода правда ползёт. Заодно коэффициент сам
+         показывает, насколько это на деле быстро. */
+      C.label(ctx, W / 2, HGT - 44, 'замедлено в ' + Math.round(st.k) + ' раз', 21, '#ffb454');
+      C.label(ctx, W / 2, HGT - 18,
+              'по-настоящему прошло ' + num(st.tSim, 3) + ' с', 19, '#7c9399');
+    } else {
+      C.label(ctx, cx, cy + h + 60, 'силы гасятся, капля стоит', 20, '#35c8d8');
+    }
+
+    C.readout(ctx, 1150, 44, 'ДАВИТ СЛЕВА', num(fL, 2) + ' Н', '#7aa6ff');
+    C.readout(ctx, 1150, 132, 'ДАВИТ СПРАВА', num(fR, 2) + ' Н', '#7aa6ff');
+    C.readout(ctx, 1150, 220, 'РАЗНОСТЬ', num(net, 3) + ' Н');
+    C.readout(ctx, 1150, 308, 'РАЗГОН КАПЛИ',
+              net > 1e-9 ? num(acc, 1) + ' м/с²  (' + num(acc / G, 1) + ' g)' : 'нет',
+              net > 1e-9 ? '#ffb454' : '#7c9399');
+  }
+
+  function setP(v){ st.p = v * ATM; setUi({ p: v, dp: ui.dp }); }
+  function setDp(v){ st.dp = v; setUi({ p: ui.p, dp: v }); }
+
+  var ref = C.useStage(W, HGT, step, draw);
+  window.__demoState = st;
+
+  return html`
+    <div class="demo">
+      <div class="controls">
+        <${C.Slider} label="Давление вокруг:" min=${1} max=${500} step=${1}
+                     value=${ui.p} onChange=${setP} display=${ui.p + ' атм'} />
+        <${C.Slider} label="Перепад:" min=${0} max=${500} step=${5}
+                     value=${ui.dp} onChange=${setDp} display=${ui.dp + ' Па'} />
+        <${C.Group}>
+          <${C.Btn} onClick=${function(){
+            st.p = 100 * ATM; st.dp = 0;
+            st.phase = 'stand'; st.pos = 0; st.vel = 0; st.tSim = 0; st.hold = 0;
+            setUi({p:100, dp:0}); }}>Сбросить<//>
+        <//>
+      </div>
+      <canvas class="stage" ref=${ref}></canvas>
+      <${C.Status} html=${ui.dp === 0
+        ? 'Давление вокруг какое угодно, хоть на дне океана. Пока со всех сторон поровну, капля стоит.'
+        : 'Перепад в ' + ui.dp + ' Па на сантиметр — против тысячи ньютонов на каждой грани это ничто, ' +
+          'а капля уже разгоняется.'} />
+    </div>`;
+}
+
+C.mount(Davlenie);
+</script>
+</body>
+</html>

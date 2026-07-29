@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="ru" class="turb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Вязкость: среднее по соседям</title>
+<link rel="stylesheet" href="../shared/demo.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../shared/vendor/react.production.min.js"></script>
+<script src="../shared/vendor/react-dom.production.min.js"></script>
+<script src="../shared/vendor/htm.js"></script>
+<script src="../shared/demo-core.js"></script>
+<script>
+'use strict';
+var C = window.DemoCore, html = C.html;
+var useRef = React.useRef, useState = React.useState;
+
+/* Откуда в уравнении ВТОРАЯ производная скорости.
+
+   Тот же слой жидкости между пластинами, что был в акте 1. Возьмём один
+   слой. Сосед сверху тянет его вперёд с силой по разнице скоростей,
+   сосед снизу тянет назад — тоже по разнице. Складываем:
+
+       (u_сверху − u) + (u_снизу − u)  =  2 · ( среднее соседей − ты )
+
+   Слева стоит ровно то, что в пределе даёт вторую производную. Справа —
+   то же самое человеческими словами: насколько ты отличаешься от среднего
+   по соседям. Это и есть ответ на вопрос «почему вторая».
+
+   Отсюда сразу главное следствие, и оно видно глазом: если профиль
+   ПРЯМОЙ, среднее соседей в точности равно тебе, силы гасятся, и вязкость
+   не делает ничего. Поэтому в акте 1 между пластинами и стояла прямая:
+   это единственная форма, которую вязкость не трогает. Стоит профилю
+   изогнуться — появляется разница, и она тянет горб обратно к прямой.
+
+   ЧЕСТНАЯ ГРАНИЦА: это сдвиговое течение, u = u(y). Общий вид μ∇²u
+   требует тензора напряжений, на пальцах он не выводится. Для картинки
+   между пластинами написанное здесь точно. */
+
+/* Сцена низкая: на слайде над ней стоит ещё и формула, и высоты демке
+   достаётся немного. Пропорции подогнаны под это место. */
+var W = 1180, HGT = 330;
+var PX0 = 170, PX1 = 660, PY0 = 58, PY1 = 252;
+var N = 33, NB = 4;               /* слоёв и через сколько берём соседей */
+
+function ux(u){ return PX0 + u * (PX1 - PX0); }
+function uy(i){ return PY1 - i / (N - 1) * (PY1 - PY0); }
+
+var PRESETS = [
+  { id: 'line', label: 'Прямая',
+    make: function (i) { return i / (N - 1); },
+    say: 'Профиль прямой. У каждого слоя среднее по соседям в точности равно ему самому, и вязкость не делает ничего.' },
+  { id: 'bump', label: 'Горб',
+    make: function (i) { var f = i / (N - 1);
+      return f + 0.34 * Math.exp(-Math.pow((f - 0.5) / 0.14, 2)); },
+    say: 'Горб выпирает над средним по соседям, и вязкость тянет его обратно. Нажмите «Пуск».' },
+  { id: 'step', label: 'Ступенька',
+    make: function (i) { return i < N / 2 ? 0.12 : 0.88; },
+    say: 'На изломе разница с соседями самая большая, туда вязкость и бьёт сильнее всего.' }
+];
+
+function profile(k){
+  var u = [];
+  for (var i = 0; i < N; i++) u.push(PRESETS[k].make(i));
+  return u;
+}
+
+function Sosedi(){
+  /* Стартовый профиль собирается прямо в инициализаторе useRef: звать
+     load() из тела компонента нельзя, там setState во время рендера. */
+  var box = useRef(null);
+  if (!box.current) box.current = { u: profile(1), play: false, sel: Math.round(N / 2), acc: 0 };
+  var st = box.current;
+  var [ui, setUi] = useState({ p: 1, play: false, sel: Math.round(N / 2) });
+
+  function load(k){
+    st.u = profile(k);
+    st.play = false;
+    st.acc = 0;
+    setUi({ p: k, play: false, sel: st.sel });
+  }
+
+  /* Один шаг сглаживания: каждый слой чуть подтягивается к среднему
+     по ближайшим соседям. Это и есть уравнение диффузии, только явно. */
+  function diffuse(k){
+    var n = st.u.slice();
+    for (var i = 1; i < N - 1; i++) n[i] = st.u[i] + k * (st.u[i + 1] + st.u[i - 1] - 2 * st.u[i]);
+    st.u = n;
+  }
+
+  function step(dt){
+    if (!st.play) return;
+    st.acc += dt;
+    var h = 1 / 240, guard = 0;
+    while (st.acc >= h && guard++ < 12) { diffuse(0.25); st.acc -= h; }
+  }
+
+  function neighbours(i){
+    var a = Math.min(N - 1, i + NB), b = Math.max(0, i - NB);
+    return { up: st.u[a], down: st.u[b], ia: a, ib: b, avg: (st.u[a] + st.u[b]) / 2 };
+  }
+
+  function plate(ctx, y, label){
+    ctx.fillStyle = '#16323a';
+    C.roundRect(ctx, PX0 - 70, y, PX1 - PX0 + 140, 16, 4); ctx.fill();
+    ctx.strokeStyle = 'rgba(230,241,244,.24)'; ctx.lineWidth = 1.4; ctx.stroke();
+    C.label(ctx, PX0 - 70, y + (label === 'верх' ? -12 : 34),
+            label === 'верх' ? 'верхняя пластина' : 'нижняя пластина', 17, '#7c9399', 'left');
+  }
+
+  function num(v){ return v.toFixed(3).replace('.', ','); }
+
+  function draw(ctx){
+    plate(ctx, PY0 - 30, 'верх');
+    plate(ctx, PY1 + 14, 'низ');
+
+    /* стрелка «куда тянет» у каждого слоя */
+    for (var i = 1; i < N - 1; i++) {
+      var nb = neighbours(i), d = nb.avg - st.u[i];
+      if (Math.abs(d) < 1e-4) continue;
+      var x = ux(st.u[i]), y = uy(i), dx = d * (PX1 - PX0);
+      ctx.strokeStyle = 'rgba(255,180,84,.55)'; ctx.lineWidth = 2; ctx.lineCap = 'butt';
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + dx, y); ctx.stroke();
+    }
+
+    /* сам профиль */
+    ctx.strokeStyle = '#35c8d8'; ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (var j = 0; j < N; j++) {
+      var xx = ux(st.u[j]), yy = uy(j);
+      if (j) ctx.lineTo(xx, yy); else ctx.moveTo(xx, yy);
+    }
+    ctx.stroke();
+    for (var m = 0; m < N; m++) {
+      ctx.beginPath(); ctx.arc(ux(st.u[m]), uy(m), 2.6, 0, 6.283);
+      ctx.fillStyle = 'rgba(53,200,216,.55)'; ctx.fill();
+    }
+
+    /* выбранный слой: ты, двое соседей и их среднее */
+    var s = st.sel, nb2 = neighbours(s);
+    ctx.strokeStyle = 'rgba(230,241,244,.16)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(PX0 - 70, uy(s)); ctx.lineTo(PX1 + 70, uy(s)); ctx.stroke();
+
+    ctx.save();
+    ctx.setLineDash([6, 6]);
+    ctx.strokeStyle = 'rgba(255,180,84,.8)'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(ux(nb2.up), uy(nb2.ia)); ctx.lineTo(ux(nb2.down), uy(nb2.ib));
+    ctx.stroke();
+    ctx.restore();
+
+    [[nb2.up, nb2.ia], [nb2.down, nb2.ib]].forEach(function (p) {
+      ctx.beginPath(); ctx.arc(ux(p[0]), uy(p[1]), 7, 0, 6.283);
+      ctx.fillStyle = '#0a1a1f'; ctx.fill();
+      ctx.strokeStyle = '#ffb454'; ctx.lineWidth = 2.4; ctx.stroke();
+    });
+
+    /* середина отрезка между соседями — это и есть их среднее */
+    var mx = ux(nb2.avg), my = uy(s);
+    ctx.strokeStyle = '#ffb454'; ctx.lineWidth = 2.4;
+    ctx.beginPath(); ctx.moveTo(mx, my - 13); ctx.lineTo(mx, my + 13); ctx.stroke();
+    C.label(ctx, mx, my - 22, 'среднее соседей', 17, '#ffb454');
+
+    C.glow(ctx, ux(st.u[s]), my, 24, '53,200,216', .55);
+    ctx.beginPath(); ctx.arc(ux(st.u[s]), my, 8, 0, 6.283);
+    ctx.fillStyle = '#35c8d8'; ctx.fill();
+    C.label(ctx, ux(st.u[s]), my + 34, 'ты', 19, '#35c8d8');
+
+    C.label(ctx, (PX0 + PX1) / 2, PY1 + 62, 'скорость слоя', 19, '#8fb2b8');
+
+    var d2 = nb2.avg - st.u[s];
+    C.readout(ctx, 1150, 50, 'СРЕДНЕЕ СОСЕДЕЙ', num(nb2.avg), '#ffb454');
+    C.readout(ctx, 1150, 142, 'ТЫ', num(st.u[s]), '#35c8d8');
+    C.readout(ctx, 1150, 234, 'РАЗНИЦА, ОНА ЖЕ СИЛА',
+              (d2 > 0 ? '+' : '') + num(d2),
+              Math.abs(d2) < 5e-4 ? '#7c9399' : '#ffb454');
+    if (Math.abs(d2) < 5e-4) C.label(ctx, 1150, 300, 'вязкости тут нечего делать', 18, '#7c9399', 'right');
+  }
+
+  var ref = C.useStage(W, HGT, step, draw);
+  window.__demoState = st;
+
+  return html`
+    <div class="demo">
+      <div class="controls">
+        <${C.Group} label="Профиль:">
+          ${PRESETS.map(function (p, k) { return html`
+            <${C.Btn} key=${p.id} active=${ui.p === k} onClick=${function(){ load(k); }}>${p.label}<//>`; })}
+        <//>
+        <${C.Group}>
+          <${C.Btn} action=${true}
+                    onClick=${function(){ st.play = !st.play; setUi({p: ui.p, play: st.play, sel: ui.sel}); }}>
+            ${ui.play ? 'Пауза' : 'Пуск'}<//>
+        <//>
+        <${C.Slider} label="Слой:" min=${NB} max=${N - 1 - NB} step=${1}
+                     value=${ui.sel} onChange=${function(v){ st.sel = Math.round(v); setUi({p:ui.p, play:ui.play, sel:st.sel}); }}
+                     display=${String(ui.sel)} />
+      </div>
+      <canvas class="stage" ref=${ref}></canvas>
+      <${C.Status} html=${PRESETS[ui.p].say} />
+    </div>`;
+}
+
+C.mount(Sosedi);
+</script>
+</body>
+</html>

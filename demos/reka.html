@@ -1,0 +1,195 @@
+<!doctype html>
+<html lang="ru" class="turb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Листик на реке</title>
+<link rel="stylesheet" href="../shared/demo.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../shared/vendor/react.production.min.js"></script>
+<script src="../shared/vendor/react-dom.production.min.js"></script>
+<script src="../shared/vendor/htm.js"></script>
+<script src="../shared/demo-core.js"></script>
+<script>
+'use strict';
+var C = window.DemoCore, html = C.html;
+var useRef = React.useRef, useState = React.useState;
+
+/* Ускорение в жидкости — на пальцах, к акту 3.
+
+   Река сужается. Течение установившееся: в каждой точке скорость всегда
+   одна и та же, и датчик на мосту это подтверждает — его стрелка не
+   шевелится никогда. А листик, проплывающий ровно под этим мостом,
+   разгоняется. С ним что-то происходит, хотя в точке не меняется ничего.
+
+   Отсюда и берётся левая часть уравнения: F = ma говорит про листик,
+   а меряем мы в точках, и одно надо перевести в другое.
+
+       ускорение листика = ∂u/∂t + u·∂u/∂x
+                           шлюз     сам себя занёс
+
+   Кнопка «шлюз» поднимает расход и оживляет первое слагаемое: тогда и
+   датчик на мосту начинает расти. Так зал видит оба слагаемых по
+   отдельности, а не только сумму.
+
+   Скорость по длине берётся из сохранения расхода: где канал вдвое уже,
+   там вода вдвое быстрее. Листики плывут по линиям тока, поэтому в
+   сужении они сходятся к оси — это не украшение, а та же непрерывность. */
+
+var W = 1180, HGT = 400;
+var X0 = 60, X1 = 1120, YC = 180;
+var HW1 = 100, HW2 = 50;          /* полуширина русла слева и справа, px */
+var XC = 620, SPAN = 110;         /* середина и протяжённость сужения */
+var LEN_M = 10;                   /* столько метров укладывается в кадр */
+var PXM = (X1 - X0) / LEN_M;
+var Q0 = 2 * HW1;                 /* расход: слева ровно 1 м/с */
+
+function halfWidth(x){
+  return HW2 + (HW1 - HW2) * 0.5 * (1 - Math.tanh((x - XC) / SPAN));
+}
+
+function Reka(){
+  var st = useRef({ q: Q0, dq: 0, gate: 0, leaves: [], leaf: null, spawn: 0 }).current;
+  var [ui, setUi] = useState({ gate: false, leaf: false });
+
+  function speed(x){ return st.q / (2 * halfWidth(x)); }        /* м/с */
+
+  /* Производная скорости по длине, в (м/с) на метр. Считаем численно:
+     профиль задан формулой, но руками её дифференцировать незачем. */
+  function dudx(x){
+    var h = 4;
+    return (speed(x + h) - speed(x - h)) / (2 * h / PXM);
+  }
+
+  function spawnLeaf(){
+    st.leaves.push({ x: X0 - 10, f: (Math.random() * 2 - 1) * 0.86, big: false });
+    if (st.leaves.length > 160) st.leaves.shift();
+  }
+
+  function step(dt){
+    /* Шлюз: расход плавно поднимается в полтора раза за три секунды.
+       Пока он поднимается, скорость растёт даже в неподвижной точке. */
+    if (st.gate) {
+      var target = Q0 * 1.5;
+      var was = st.q;
+      st.q = Math.min(target, st.q + Q0 * 0.5 / 3 * dt);
+      st.dq = (st.q - was) / dt;
+    } else st.dq = 0;
+
+    st.spawn += dt;
+    while (st.spawn >= 0.09) { st.spawn -= 0.09; spawnLeaf(); }
+
+    for (var i = st.leaves.length - 1; i >= 0; i--) {
+      var p = st.leaves[i];
+      p.x += speed(p.x) * PXM * dt;
+      if (p.x > X1 + 20) st.leaves.splice(i, 1);
+    }
+    if (st.leaf) {
+      st.leaf.x += speed(st.leaf.x) * PXM * dt;
+      if (st.leaf.x > X1 + 20) st.leaf = null;
+    }
+  }
+
+  function bankPath(ctx, sign){
+    ctx.beginPath();
+    ctx.moveTo(X0, YC + sign * HW1);
+    for (var x = X0; x <= X1; x += 8) ctx.lineTo(x, YC + sign * halfWidth(x));
+    ctx.lineTo(X1, YC + sign * HW2);
+    ctx.lineTo(X1, YC + sign * 400);
+    ctx.lineTo(X0, YC + sign * 400);
+    ctx.closePath();
+  }
+
+  function draw(ctx){
+    /* вода */
+    ctx.fillStyle = 'rgba(53,200,216,.07)';
+    ctx.beginPath();
+    ctx.moveTo(X0, YC - HW1);
+    for (var x = X0; x <= X1; x += 8) ctx.lineTo(x, YC - halfWidth(x));
+    for (var x2 = X1; x2 >= X0; x2 -= 8) ctx.lineTo(x2, YC + halfWidth(x2));
+    ctx.closePath(); ctx.fill();
+
+    /* берега */
+    [-1, 1].forEach(function (s) {
+      bankPath(ctx, s);
+      ctx.fillStyle = '#0c1c21'; ctx.fill();
+      ctx.strokeStyle = 'rgba(230,241,244,.28)'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(X0, YC + s * HW1);
+      for (var x3 = X0; x3 <= X1; x3 += 8) ctx.lineTo(x3, YC + s * halfWidth(x3));
+      ctx.stroke();
+    });
+
+    /* листики: по линиям тока, поэтому в сужении сходятся к оси */
+    st.leaves.forEach(function (p) {
+      var hw = halfWidth(p.x), y = YC + p.f * hw;
+      var a = 0.28 + 0.4 * (speed(p.x) - 1) / 1.2;
+      ctx.beginPath(); ctx.arc(p.x, y, 2.6, 0, 6.283);
+      ctx.fillStyle = 'rgba(127,223,233,' + C.clamp(a, .18, .8).toFixed(2) + ')';
+      ctx.fill();
+    });
+
+    /* мост с датчиком: стоит ровно там, где скорость меняется быстрее всего */
+    var probeU = speed(XC);
+    ctx.strokeStyle = 'rgba(230,241,244,.5)'; ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(XC, YC - HW1 - 26); ctx.lineTo(XC, YC + HW1 + 26); ctx.stroke();
+    ctx.fillStyle = '#0e2128';
+    C.roundRect(ctx, XC - 52, YC - HW1 - 46, 104, 22, 6); ctx.fill();
+    ctx.strokeStyle = 'rgba(230,241,244,.3)'; ctx.lineWidth = 1.4; ctx.stroke();
+    C.label(ctx, XC, YC - HW1 - 30, 'мост', 16, '#86a0a8');
+
+    /* отслеживаемый листик */
+    if (st.leaf) {
+      var hwL = halfWidth(st.leaf.x), yL = YC + st.leaf.f * hwL;
+      C.glow(ctx, st.leaf.x, yL, 26, '255,180,84', .5);
+      ctx.beginPath(); ctx.arc(st.leaf.x, yL, 7, 0, 6.283);
+      ctx.fillStyle = '#ffb454'; ctx.fill();
+    }
+
+    /* показания */
+    var uL = st.leaf ? speed(st.leaf.x) : null;
+    var aL = st.leaf ? st.dq / (2 * halfWidth(st.leaf.x)) + uL * dudx(st.leaf.x) : null;
+    function num(v, d){ return v.toFixed(d).replace('.', ','); }
+
+    C.readout(ctx, 380, 336, 'ДАТЧИК НА МОСТУ', num(probeU, 2) + ' м/с',
+              st.dq > 0 ? '#ffb454' : '#35c8d8');
+    C.readout(ctx, 740, 336, 'СПИДОМЕТР ЛИСТИКА',
+              uL == null ? '—' : num(uL, 2) + ' м/с', '#ffb454');
+    C.readout(ctx, 1120, 336, 'УСКОРЕНИЕ ЛИСТИКА',
+              aL == null ? '—' : num(aL, 2) + ' м/с²', '#ffb454');
+  }
+
+  function release(){ st.leaf = { x: X0, f: 0 }; setUi({ gate: ui.gate, leaf: true }); }
+  function gate(){ st.gate = !st.gate; if (!st.gate) st.q = Q0; setUi({ gate: st.gate, leaf: ui.leaf }); }
+  function reset(){ st.q = Q0; st.gate = false; st.dq = 0; st.leaf = null; setUi({ gate: false, leaf: false }); }
+
+  var ref = C.useStage(W, HGT, step, draw);
+  window.__demoState = st;
+  window.__rekaSpeed = speed;
+
+  return html`
+    <div class="demo">
+      <div class="controls">
+        <${C.Group}>
+          <${C.Btn} action=${true} onClick=${release}>Отпустить листик<//>
+        <//>
+        <${C.Group} label="Течение:">
+          <${C.Btn} active=${ui.gate} onClick=${gate}>Открыть шлюз<//>
+          <${C.Btn} onClick=${reset}>Сбросить<//>
+        <//>
+      </div>
+      <canvas class="stage" ref=${ref}></canvas>
+      <${C.Status} html=${ui.gate
+        ? 'Шлюз открыт, расход растёт. Теперь и датчик на мосту пошёл вверх: течение меняется во времени.'
+        : 'Течение установившееся. Датчик на мосту не шевелится, а листик под тем же мостом разгоняется.'} />
+    </div>`;
+}
+
+C.mount(Reka);
+</script>
+</body>
+</html>
