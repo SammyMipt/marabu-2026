@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ru" class="turb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Труба: парабола и четвёртая степень</title>
+<link rel="stylesheet" href="../shared/demo.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../shared/vendor/react.production.min.js"></script>
+<script src="../shared/vendor/react-dom.production.min.js"></script>
+<script src="../shared/vendor/htm.js"></script>
+<script src="../shared/demo-core.js"></script>
+<script>
+'use strict';
+var C = window.DemoCore, html = C.html;
+var useRef = React.useRef, useState = React.useState;
+
+/* Пуазёйль: единственный случай, когда уравнение сдаётся без боя.
+
+   Вязкость держит жидкость у стенок намертво, и профиль скорости выходит
+   параболой: быстро по оси, ноль у стенки. Частицы плывут каждая со своей
+   скоростью, и парабола видна в движении, а не только линией.
+
+   Главный удар — расход растёт как ЧЕТВЁРТАЯ степень радиуса. Ползунок
+   ходит от 2 до 9 мм, база сравнения 4,5 мм, и ровно на 9 мм показание
+   становится «×16». Отсюда прямая дорога к сосудам: чуть сузился —
+   и кровоток обвалился.
+
+   Числа настоящие: вода, перепад 1,6 Па на двадцать сантиметров трубы.
+   Подобраны так, чтобы во всём диапазоне ползунка число Рейнольдса
+   оставалось заметно ниже критических двух с лишним тысяч — иначе демка
+   показывала бы ламинарное решение там, где его уже нет. Re выведено
+   отдельным показанием, чтобы это было видно. */
+
+var W = 1180, HGT = 380;
+var PIPE = { x0: 90, x1: 830, cy: 168 };
+var PXMM = 13;                    /* миллиметр радиуса в пикселях */
+var LEN_M = 0.2;                  /* длина видимого куска трубы, м */
+var PXM = (PIPE.x1 - PIPE.x0) / LEN_M;
+var RHO = 1000, MU = 1e-3, DP = 1.6;   /* вода, перепад на этом куске, Па */
+var BASE_R = 4.5e-3;              /* с чем сравниваем расход */
+
+function uMax(R){ return DP * R * R / (4 * MU * LEN_M); }        /* м/с */
+function flow(R){ return Math.PI * DP * Math.pow(R, 4) / (8 * MU * LEN_M); }  /* м³/с */
+function reynolds(R){ return RHO * (uMax(R) / 2) * (2 * R) / MU; }
+
+function Truba(){
+  var st = useRef({ rmm: 6, parts: [], spawn: 0 }).current;
+  var [ui, setUi] = useState({ rmm: 6 });
+
+  function R(){ return st.rmm * 1e-3; }
+
+  function step(dt){
+    var um = uMax(R());
+    st.spawn += dt;
+    while (st.spawn >= 0.035) {
+      st.spawn -= 0.035;
+      /* по радиусу равномерно: так виден весь профиль, а не только ось */
+      st.parts.push({ x: PIPE.x0, f: Math.random() * 2 - 1 });
+      if (st.parts.length > 420) st.parts.shift();
+    }
+    for (var i = st.parts.length - 1; i >= 0; i--) {
+      var p = st.parts[i];
+      p.x += um * (1 - p.f * p.f) * PXM * dt;
+      if (p.x > PIPE.x1) st.parts.splice(i, 1);
+    }
+  }
+
+  function num(v, d){ return v.toFixed(d).replace('.', ','); }
+
+  function draw(ctx){
+    var r = R(), rp = st.rmm * PXMM, um = uMax(r), cy = PIPE.cy;
+
+    /* стенки трубы */
+    [-1, 1].forEach(function (s) {
+      ctx.fillStyle = '#16323a';
+      C.roundRect(ctx, PIPE.x0 - 16, cy + s * rp - (s > 0 ? 0 : 16), PIPE.x1 - PIPE.x0 + 32, 16, 3);
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(230,241,244,.26)'; ctx.lineWidth = 1.4; ctx.stroke();
+    });
+
+    /* заливка потока */
+    ctx.fillStyle = 'rgba(53,200,216,.06)';
+    ctx.fillRect(PIPE.x0 - 16, cy - rp, PIPE.x1 - PIPE.x0 + 32, 2 * rp);
+
+    /* частицы: каждая идёт со скоростью своего слоя */
+    st.parts.forEach(function (p) {
+      var v = 1 - p.f * p.f;
+      ctx.beginPath(); ctx.arc(p.x, cy + p.f * rp, 2.8, 0, 6.283);
+      ctx.fillStyle = 'rgba(127,223,233,' + (0.25 + 0.6 * v).toFixed(2) + ')';
+      ctx.fill();
+    });
+
+    /* сама парабола: стрелки от стенки к стенке в одном сечении */
+    var xs = PIPE.x0 + 150, scale = 190 / Math.max(um, 1e-9);
+    ctx.strokeStyle = 'rgba(255,180,84,.16)'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(xs, cy - rp); ctx.lineTo(xs, cy + rp); ctx.stroke();
+    for (var k = -6; k <= 6; k++) {
+      var f = k / 6, v = um * (1 - f * f), y = cy + f * rp;
+      var L = v * scale;
+      if (L < 2) continue;
+      ctx.strokeStyle = '#ffb454'; ctx.lineWidth = 2.6; ctx.lineCap = 'butt';
+      ctx.beginPath(); ctx.moveTo(xs, y); ctx.lineTo(xs + L - 9, y); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(xs + L, y); ctx.lineTo(xs + L - 9, y - 5); ctx.lineTo(xs + L - 9, y + 5);
+      ctx.closePath(); ctx.fillStyle = '#ffb454'; ctx.fill();
+    }
+    ctx.strokeStyle = 'rgba(255,180,84,.75)'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    for (var j = -20; j <= 20; j++) {
+      var ff = j / 20, vv = um * (1 - ff * ff);
+      var xx = xs + vv * scale, yy = cy + ff * rp;
+      if (j === -20) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy);
+    }
+    ctx.stroke();
+
+    C.label(ctx, PIPE.x0 - 16, cy - rp - 26, 'у стенки жидкость стоит', 18, '#7c9399', 'left');
+    C.label(ctx, xs + 210, cy, 'парабола', 20, '#ffb454', 'left');
+
+    var re = reynolds(r);
+    C.readout(ctx, 1150, 44, 'СКОРОСТЬ ПО ОСИ', num(um, 3) + ' м/с', '#35c8d8');
+    C.readout(ctx, 1150, 134, 'РАСХОД', num(flow(r) * 1e6, 2) + ' мл/с', '#35c8d8');
+    C.readout(ctx, 1150, 224, 'ОТ ТРУБЫ В 4,5 ММ',
+              '× ' + num(flow(r) / flow(BASE_R), 1), '#ffb454');
+    C.readout(ctx, 1150, 314, 'ЧИСЛО РЕЙНОЛЬДСА',
+              String(Math.round(re)), re < 2300 ? '#35c8d8' : '#ff7a66');
+  }
+
+  var ref = C.useStage(W, HGT, step, draw);
+  window.__demoState = st;
+  window.__truba = { uMax: uMax, flow: flow, reynolds: reynolds };
+
+  return html`
+    <div class="demo">
+      <div class="controls">
+        <${C.Slider} label="Радиус трубы:" min=${2} max=${9} step=${0.1}
+                     value=${ui.rmm}
+                     onChange=${function(v){ st.rmm = v; setUi({ rmm: v }); }}
+                     display=${num(ui.rmm, 1) + ' мм'} />
+        <${C.Group}>
+          <${C.Btn} onClick=${function(){ st.rmm = 4.5; st.parts = []; setUi({rmm: 4.5}); }}>
+            Вернуть 4,5 мм<//>
+        <//>
+      </div>
+      <canvas class="stage" ref=${ref}></canvas>
+      <${C.Status} html=${'Радиус вырос вдвое, с 4,5 до 9 мм — расход вырос в шестнадцать раз. ' +
+        'Четвёртая степень: половина выигрыша от того, что труба шире, половина от того, ' +
+        'что в ней быстрее.'} />
+    </div>`;
+}
+
+C.mount(Truba);
+</script>
+</body>
+</html>

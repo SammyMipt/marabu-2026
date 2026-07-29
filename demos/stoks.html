@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="ru" class="turb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Шарик тонет и больше не разгоняется</title>
+<link rel="stylesheet" href="../shared/demo.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../shared/vendor/react.production.min.js"></script>
+<script src="../shared/vendor/react-dom.production.min.js"></script>
+<script src="../shared/vendor/htm.js"></script>
+<script src="../shared/demo-core.js"></script>
+<script>
+'use strict';
+var C = window.DemoCore, html = C.html;
+var useRef = React.useRef, useState = React.useState;
+
+/* Стокс: шарик тонет и почти сразу перестаёт разгоняться.
+
+   ДВЕ РАЗНЫЕ ОСИ ВРЕМЕНИ, и это главное решение демки. Разгон в вязкой
+   жидкости кончается за время m/(6πμR): для стального шарика в глицерине
+   это пять ТЫСЯЧНЫХ секунды, а падать он будет полторы секунды. На одной
+   оси эти два процесса не помещаются — график получается плоской чертой,
+   и весь смысл пропадает.
+
+   Поэтому слева сосуд со своим ходом времени (падение целиком, подогнано
+   под четыре секунды показа), а справа график с собственной осью в
+   миллисекундах: только разгон, крупно. Обе шкалы подписаны на экране.
+
+   Отсюда и формулировка, которая сильнее исходной: разгон кончился за
+   сотые доли секунды, дальше ВСЁ падение идёт равномерно.
+
+   Падение интегрируется с полным законом сопротивления — та же корреляция
+   Клифта и Говена, что на кривой в акте 2, — а рядом показано предсказание
+   формулы Стокса. В мёде и глицерине они сходятся, потому что Re меньше
+   единицы. В воде Стокс промахивается в сотню раз: это и есть граница
+   акта 4, за которой уравнение перестаёт решаться ручкой. */
+
+var W = 1180, HGT = 380;
+var COL = { x: 215, y0: 44, y1: 324, w: 240 };
+var H_M = 0.12;                    /* высота столба, м */
+var PXM = (COL.y1 - COL.y0) / H_M;
+var G = 9.81, RHO_B = 7800;        /* стальной шарик */
+var SHOW = 4;                      /* столько секунд идёт падение на экране */
+var GRAPH = { x0: 560, x1: 960, y0: 62, y1: 300 };
+
+var FLUIDS = [
+  { id: 'honey', label: 'Мёд',      rho: 1400, mu: 10 },
+  { id: 'glyc',  label: 'Глицерин', rho: 1260, mu: 1.4 },
+  { id: 'water', label: 'Вода',     rho: 1000, mu: 1e-3 }
+];
+
+function cdOf(Re){
+  return 24 / Re * (1 + 0.15 * Math.pow(Re, 0.687)) +
+         0.42 / (1 + 42500 * Math.pow(Re, -1.16));
+}
+function volume(R){ return 4 / 3 * Math.PI * R * R * R; }
+function drive(f, R){ return (RHO_B - f.rho) * volume(R) * G; }
+function stokesV(f, R){ return 2 * (RHO_B - f.rho) * G * R * R / (9 * f.mu); }
+
+/* Установившаяся скорость с полным законом сопротивления */
+function terminal(f, R){
+  var A = Math.PI * R * R, wt = drive(f, R), v = 0.01;
+  for (var i = 0; i < 300; i++) {
+    var Re = Math.max(f.rho * v * 2 * R / f.mu, 1e-9);
+    var d = cdOf(Re) * 0.5 * f.rho * v * v * A;
+    v *= Math.pow(wt / Math.max(d, 1e-15), 0.22);
+  }
+  return v;
+}
+/* Время выхода на режим: установившаяся скорость, делённая на начальное
+   ускорение (то, с которым шарик стартует, пока сопротивления ещё нет).
+   В стоксовом режиме это в точности m/(6πμR), но формула годится и там,
+   где Стокс уже не работает: для воды она даёт 0,14 с вместо стоксовых
+   пятнадцати, и ось графика перестаёт быть бессмыслицей.
+   Окно берём в шесть таких времён — там кривая уже легла на полку. */
+function relaxTime(f, R){
+  return terminal(f, R) / (drive(f, R) / (RHO_B * volume(R)));
+}
+
+function Stoks(){
+  var box = useRef(null);
+  if (!box.current) box.current = { fi: 1, rmm: 3 };
+  var st = box.current;
+  var [ui, setUi] = useState({ fi: 1, rmm: 3 });
+
+  function fl(){ return FLUIDS[st.fi]; }
+  function R(){ return st.rmm * 1e-3; }
+
+  function relaunch(){
+    var f = fl(), r = R();
+    st.vt = terminal(f, r);
+    st.te = relaxTime(f, r);
+    st.tw = 6 * st.te;                     /* окно графика, с */
+    st.lim = Math.min(st.te * 0.25, 2e-3); /* потолок шага интегрирования */
+    st.y = 0; st.v = 0; st.hold = 0; st.done = false; st.gp = 0;
+    st.k = C.clamp((H_M / st.vt) / SHOW, 0.005, 200);
+
+    /* Кривая разгона считается один раз на запуск, на своей мелкой сетке */
+    var A = Math.PI * r * r, m = RHO_B * volume(r), h = st.tw / 400, v = 0;
+    st.curve = [0];
+    for (var i = 0; i < 400; i++) {
+      var Re = Math.max(f.rho * v * 2 * r / f.mu, 1e-9);
+      v += (drive(f, r) - cdOf(Re) * 0.5 * f.rho * v * v * A) / m * h;
+      st.curve.push(v);
+    }
+  }
+  if (!st.curve) relaunch();
+
+  function step(dt){
+    if (st.gp < 1) st.gp = Math.min(1, st.gp + dt / 2.2);
+    if (st.done) {
+      st.hold += dt;
+      if (st.hold > 1.2) relaunch();
+      return;
+    }
+    var f = fl(), r = R(), A = Math.PI * r * r, m = RHO_B * volume(r);
+    var ds = dt * st.k;
+
+    /* Шаг обязан быть заметно меньше времени выхода на режим, иначе явная
+       схема идёт вразнос: в мёде релаксация занимает полторы миллисекунды,
+       а кадр при ускоренном показе покрывает сорок, и без дробления
+       скорость начинает раскачиваться и улетает в NaN. */
+    var sub = C.clamp(Math.ceil(ds / st.lim), 10, 4000), h = ds / sub;
+
+    for (var i = 0; i < sub; i++) {
+      var Re = Math.max(f.rho * st.v * 2 * r / f.mu, 1e-9);
+      st.v += (drive(f, r) - cdOf(Re) * 0.5 * f.rho * st.v * st.v * A) / m * h;
+      st.y += st.v * h;
+    }
+    if (!isFinite(st.v) || !isFinite(st.y)) { relaunch(); return; }
+    if (st.y >= H_M) { st.y = H_M; st.done = true; st.hold = 0; }
+  }
+
+  function num(v, d){ return v.toFixed(d).replace('.', ','); }
+
+  function draw(ctx){
+    var f = fl(), r = R(), rp = Math.max(7, r * PXM);
+
+    /* сосуд */
+    ctx.fillStyle = 'rgba(53,200,216,.07)';
+    ctx.fillRect(COL.x - COL.w / 2, COL.y0, COL.w, COL.y1 - COL.y0);
+    ctx.strokeStyle = 'rgba(230,241,244,.3)'; ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(COL.x - COL.w / 2, COL.y0); ctx.lineTo(COL.x - COL.w / 2, COL.y1);
+    ctx.lineTo(COL.x + COL.w / 2, COL.y1); ctx.lineTo(COL.x + COL.w / 2, COL.y0);
+    ctx.stroke();
+    C.label(ctx, COL.x, COL.y0 - 16, f.label + ', столб 12 см', 19, '#8fb2b8');
+
+    /* шарик */
+    var by = COL.y0 + st.y * PXM;
+    C.glow(ctx, COL.x, by, rp * 3, '230,241,244', .3);
+    var g = ctx.createRadialGradient(COL.x - rp * .35, by - rp * .4, rp * .1, COL.x, by, rp);
+    g.addColorStop(0, '#e9eef2'); g.addColorStop(1, '#5d6f78');
+    ctx.beginPath(); ctx.arc(COL.x, by, rp, 0, 6.283);
+    ctx.fillStyle = g; ctx.fill();
+
+    /* силы: вес держится, сопротивление доросло до него и держится тоже */
+    var Re = Math.max(f.rho * st.v * 2 * r / f.mu, 1e-9);
+    var drag = cdOf(Re) * 0.5 * f.rho * st.v * st.v * Math.PI * r * r;
+    var wt = drive(f, r), sc = 58 / Math.max(wt, 1e-12);
+    var ax = COL.x + COL.w / 2 - 34;
+    function farrow(dy, L, col){
+      if (L < 5) return;
+      ctx.strokeStyle = col; ctx.lineWidth = 7; ctx.lineCap = 'butt';
+      ctx.beginPath(); ctx.moveTo(ax, by); ctx.lineTo(ax, by + dy * (L - 11)); ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(ax, by + dy * L);
+      ctx.lineTo(ax - 8, by + dy * (L - 11));
+      ctx.lineTo(ax + 8, by + dy * (L - 11));
+      ctx.closePath(); ctx.fillStyle = col; ctx.fill();
+    }
+    farrow(1, wt * sc, '#ffb454');
+    farrow(-1, Math.min(drag, wt) * sc, '#35c8d8');
+
+    C.label(ctx, COL.x - COL.w / 2, COL.y1 + 26,
+            st.k >= 1 ? 'ускорено в ' + num(st.k, 1) + ' раз'
+                      : 'замедлено в ' + num(1 / st.k, 1) + ' раз',
+            18, '#7c9399', 'left');
+    C.label(ctx, COL.x + COL.w / 2, COL.y1 + 26, 'вес и сопротивление', 18, '#7c9399', 'right');
+
+    /* ── график разгона: своя ось, в миллисекундах ── */
+    var GX0 = GRAPH.x0, GX1 = GRAPH.x1, GY0 = GRAPH.y0, GY1 = GRAPH.y1;
+    var vmax = st.vt * 1.22;
+    ctx.strokeStyle = 'rgba(230,241,244,.28)'; ctx.lineWidth = 1.4;
+    ctx.beginPath(); ctx.moveTo(GX0, GY0); ctx.lineTo(GX0, GY1); ctx.lineTo(GX1, GY1); ctx.stroke();
+
+    ctx.setLineDash([7, 7]); ctx.strokeStyle = 'rgba(255,180,84,.65)'; ctx.lineWidth = 1.6;
+    var yt = GY1 - st.vt / vmax * (GY1 - GY0);
+    ctx.beginPath(); ctx.moveTo(GX0, yt); ctx.lineTo(GX1, yt); ctx.stroke();
+    ctx.setLineDash([]);
+    C.label(ctx, GX1, yt - 12, 'установившаяся скорость', 17, '#ffb454', 'right');
+
+    var n = Math.max(2, Math.round(st.curve.length * st.gp));
+    ctx.strokeStyle = '#35c8d8'; ctx.lineWidth = 3;
+    ctx.beginPath();
+    for (var i = 0; i < n; i++) {
+      var x = GX0 + i / (st.curve.length - 1) * (GX1 - GX0);
+      var y = GY1 - C.clamp(st.curve[i] / vmax, 0, 1) * (GY1 - GY0);
+      if (i) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    }
+    ctx.stroke();
+
+    var ms = st.tw * 1000;
+    C.label(ctx, (GX0 + GX1) / 2, GY1 + 30,
+            'разгон: первые ' + (ms < 10 ? num(ms, 1) : String(Math.round(ms))) + ' мс',
+            19, '#8fb2b8');
+    ctx.save(); ctx.translate(GX0 - 30, (GY0 + GY1) / 2); ctx.rotate(-Math.PI / 2);
+    C.label(ctx, 0, 0, 'скорость', 18, '#7c9399'); ctx.restore();
+
+    /* показания */
+    var vst = stokesV(f, r), ret = f.rho * st.vt * 2 * r / f.mu;
+    C.readout(ctx, 1150, 44, 'СКОРОСТЬ СЕЙЧАС', num(st.v * 100, 2) + ' см/с', '#35c8d8');
+    C.readout(ctx, 1150, 130, 'УСТАНОВИВШАЯСЯ', num(st.vt * 100, 2) + ' см/с', '#ffb454');
+    C.readout(ctx, 1150, 216, 'ЧИСЛО РЕЙНОЛЬДСА',
+              ret < 10 ? num(ret, 2) : String(Math.round(ret)),
+              ret < 1 ? '#35c8d8' : '#ff7a66');
+    C.readout(ctx, 1150, 302, 'ФОРМУЛА СТОКСА ДАЁТ',
+              num(vst * 100, ret < 1 ? 2 : 0) + ' см/с',
+              ret < 1 ? '#35c8d8' : '#ff7a66');
+  }
+
+  function pick(i){ st.fi = i; relaunch(); setUi({ fi: i, rmm: st.rmm }); }
+  function setR(v){ st.rmm = v; relaunch(); setUi({ fi: st.fi, rmm: v }); }
+
+  var ref = C.useStage(W, HGT, step, draw);
+  window.__demoState = st;
+  window.__stoks = { terminal: terminal, stokesV: stokesV, relaxTime: relaxTime, FLUIDS: FLUIDS };
+
+  var re = fl().rho * (st.vt || 0) * 2 * R() / fl().mu;
+  return html`
+    <div class="demo">
+      <div class="controls">
+        <${C.Group} label="Жидкость:">
+          ${FLUIDS.map(function (f, i) { return html`
+            <${C.Btn} key=${f.id} active=${ui.fi === i} onClick=${function(){ pick(i); }}>${f.label}<//>`; })}
+        <//>
+        <${C.Slider} label="Радиус шарика:" min=${1} max=${6} step=${0.5}
+                     value=${ui.rmm} onChange=${setR} display=${num(ui.rmm, 1) + ' мм'} />
+      </div>
+      <canvas class="stage" ref=${ref}></canvas>
+      <${C.Status} html=${re < 1
+        ? 'Число Рейнольдса меньше единицы: формула Стокса здесь законна и попадает точно. ' +
+          'Разгон кончается за сотые доли секунды, дальше всё падение равномерное.'
+        : 'Число Рейнольдса больше единицы, и формула Стокса промахивается. Вот где кончается ' +
+          'область, в которой уравнение решается ручкой.'} />
+    </div>`;
+}
+
+C.mount(Stoks);
+</script>
+</body>
+</html>

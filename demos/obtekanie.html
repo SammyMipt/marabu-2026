@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="ru" class="turb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Обтекание: от Стокса до дорожки Кармана</title>
+<link rel="stylesheet" href="../shared/demo.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../shared/vendor/react.production.min.js"></script>
+<script src="../shared/vendor/react-dom.production.min.js"></script>
+<script src="../shared/vendor/htm.js"></script>
+<script src="../shared/demo-core.js"></script>
+<script>
+'use strict';
+var C = window.DemoCore, html = C.html;
+var useRef = React.useRef, useState = React.useState;
+
+/* Обтекание круглого тела при разном числе Рейнольдса.
+
+   ЭТО НЕ РИСУНОК. Внутри честный решатель уравнений течения — метод
+   решёточных уравнений Больцмана (D2Q9, BGK), который в пределе даёт
+   те самые Навье–Стокса, что зал собрал в акте 3. Вязкость задаётся
+   одним числом τ, из него получается Re, и дальше картинка складывается
+   сама. Дорожка Кармана здесь не нарисована — она заводится сама, когда
+   Re переваливает за полсотни, как и положено.
+
+   Отсюда демка работает на два акта сразу:
+     · акт 4, малое Re — обтекание гладкое и почти симметричное спереди
+       и сзади, следа нет, всё считается;
+     · акт 5, большое Re — за телом заводятся вихри и срываются по
+       очереди, и никакой формулой это уже не описать.
+
+   ЧЕСТНАЯ ОГОВОРКА: на плоской картинке круг — это цилиндр, а не шар.
+   Формула Стокса на слайде записана для шара, потому что падает у нас
+   шарик. Качественная история одна и та же, но пороговые числа разные:
+   у цилиндра вихри начинают срываться около Re ≈ 47, у шара позже.
+   В заметках слайда это сказано.
+
+   ПОКАЗЫВАЕМ КРАСКОЙ, а не полем завихрённости. Завихрённость — язык
+   постобработки: зал видит цветные пятна и должен поверить, что это
+   вихри. Краска же ведёт себя как в настоящей трубе: гребёнка выпускает
+   струйки, они обтекают тело и на большом Re сворачиваются в дорожку
+   сами. Вся лекция построена на этом языке — дымок в акте 0, краска в
+   ролике про обратимость, частицы в трубе Пуазёйля, — и в акте 5 будет
+   опыт Рейнольдса, где краску пускают по-настоящему.
+
+   Завихрённость осталась вторым режимом: она нужна ровно один раз, когда
+   вихри надо назвать вихрями. */
+
+/* Решётка подобрана под скорость: на 240×92 кадр стоил 26 мс и не влезал
+   в шестьдесят кадров в секунду, а колода должна идти на чужом ноутбуке.
+   Центр тела смещён на полклетки: идеально симметричная сетка не даёт
+   неустойчивости зацепиться, и дорожка не заводится вовсе. */
+var NX = 320, NY = 80;
+var CYL = { x: 62, y: 40.5, r: 8 };
+var U0 = 0.07;                    /* скорость набегающего потока в единицах решётки */
+/* Пропорции решётки и кадра совпадают ровно 4:1, иначе поле растягивается
+   по горизонтали и вихри выходят эллипсами. Длинный хвост нужен и по делу:
+   дорожке требуется место, чтобы развернуться. */
+var W = 1180, HGT = 341;
+
+/* D2Q9: девять направлений, веса и противоположные индексы */
+var EX = [0, 1, 0, -1, 0, 1, -1, -1, 1];
+var EY = [0, 0, 1, 0, -1, 1, 1, -1, -1];
+var WT = [4/9, 1/9, 1/9, 1/9, 1/9, 1/36, 1/36, 1/36, 1/36];
+var OPP = [0, 3, 4, 1, 2, 7, 8, 5, 6];
+
+var N = NX * NY;
+var f = [], ft = [];
+for (var q = 0; q < 9; q++) { f.push(new Float32Array(N)); ft.push(new Float32Array(N)); }
+var solid = new Uint8Array(N);
+var rhoA = new Float32Array(N), uxA = new Float32Array(N), uyA = new Float32Array(N);
+var SCRATCH = new Float32Array(9);   /* под отражение: без него на каждой клетке тела рождался массив */
+
+/* ── краска ──────────────────────────────────────────────────────────
+   Гребёнка слева непрерывно выпускает струйки. Частица идёт ровно с той
+   скоростью, что в её точке, — скорость снимается билинейно с решётки.
+   Ряды покрашены через один в два цвета: так соседние струйки различимы,
+   ровно как в настоящей трубе с двумя красками. */
+var ROWS = 16, PER_ROW = 210, NP = ROWS * PER_ROW;
+var SEED_X = 6;
+var px = new Float32Array(NP), py = new Float32Array(NP), prow = new Uint8Array(NP);
+
+function rowY(r){ return 5 + (NY - 10) * (r + 0.5) / ROWS; }
+
+function seedOne(k){
+  var r = prow[k];
+  px[k] = SEED_X + Math.random() * 2;
+  py[k] = rowY(r) + (Math.random() - 0.5) * 0.8;
+}
+function seedAll(){
+  for (var k = 0; k < NP; k++) {
+    prow[k] = k % ROWS;
+    px[k] = SEED_X + Math.random() * (NX - SEED_X - 4);
+    py[k] = rowY(prow[k]) + (Math.random() - 0.5) * 0.8;
+  }
+}
+seedAll();
+
+function sampleU(x, y, out){
+  var x0 = x | 0, y0 = y | 0;
+  if (x0 < 0) x0 = 0; else if (x0 > NX - 2) x0 = NX - 2;
+  if (y0 < 0) y0 = 0; else if (y0 > NY - 2) y0 = NY - 2;
+  var fx = x - x0, fy = y - y0;
+  var i00 = x0 + y0 * NX, i10 = i00 + 1, i01 = i00 + NX, i11 = i01 + 1;
+  out[0] = (uxA[i00] * (1 - fx) + uxA[i10] * fx) * (1 - fy) +
+           (uxA[i01] * (1 - fx) + uxA[i11] * fx) * fy;
+  out[1] = (uyA[i00] * (1 - fx) + uyA[i10] * fx) * (1 - fy) +
+           (uyA[i01] * (1 - fx) + uyA[i11] * fx) * fy;
+}
+
+var UV = new Float32Array(2);
+
+function moveDye(steps){
+  for (var k = 0; k < NP; k++) {
+    sampleU(px[k], py[k], UV);
+    px[k] += UV[0] * steps;
+    py[k] += UV[1] * steps;
+    var gx = px[k] | 0, gy = py[k] | 0;
+    if (px[k] > NX - 3 || py[k] < 1 || py[k] > NY - 2 ||
+        (gx >= 0 && gx < NX && gy >= 0 && gy < NY && solid[gx + gy * NX])) seedOne(k);
+  }
+}
+
+for (var y = 0; y < NY; y++) for (var x = 0; x < NX; x++) {
+  var dx = x - CYL.x, dy = y - CYL.y;
+  if (dx * dx + dy * dy <= CYL.r * CYL.r) solid[x + y * NX] = 1;
+}
+
+function feq(q, rho, ux, uy){
+  var eu = EX[q] * ux + EY[q] * uy, u2 = ux * ux + uy * uy;
+  return WT[q] * rho * (1 + 3 * eu + 4.5 * eu * eu - 1.5 * u2);
+}
+
+/* Толчок после сброса. Из чистого round-off неустойчивость растёт минуты,
+   на лекции столько не ждут. Даём короткий односторонний импульс сразу за
+   телом и убираем: дальше течение само выбирает свою частоту, мы её
+   не навязываем. */
+var kick = 0;
+
+function reset(){
+  for (var i = 0; i < N; i++) {
+    rhoA[i] = 1; uxA[i] = U0; uyA[i] = 0;
+    for (var q = 0; q < 9; q++) f[q][i] = feq(q, 1, U0, 0);
+  }
+  kick = 220;
+}
+reset();
+
+/* Один шаг: столкновение, снос, отражение от тела и края потока. */
+function lbmStep(tau){
+  var omega = 1 / tau;
+  for (var i = 0; i < N; i++) {
+    if (solid[i]) continue;
+    var rho = 0, mx = 0, my = 0;
+    for (var q = 0; q < 9; q++) { var v = f[q][i]; rho += v; mx += EX[q] * v; my += EY[q] * v; }
+    var ux = mx / rho, uy = my / rho;
+    rhoA[i] = rho; uxA[i] = ux; uyA[i] = uy;
+    for (var q2 = 0; q2 < 9; q2++) f[q2][i] += omega * (feq(q2, rho, ux, uy) - f[q2][i]);
+  }
+
+  /* Снос со скольжением по верхней и нижней кромке: поток не в трубе,
+     стенки тут не нужны и только рожали бы свои пограничные слои.
+     Буферы не копируем, а меняем местами — девять копий массива на шаг
+     стоили дороже самого шага. */
+  for (var q3 = 0; q3 < 9; q3++) {
+    var src = f[q3], dst = ft[q3], ex = EX[q3], ey = EY[q3];
+    for (var yy = 0; yy < NY; yy++) {
+      var sy = yy - ey;
+      if (sy < 0) sy = 0; else if (sy >= NY) sy = NY - 1;
+      var rowD = yy * NX, rowS = sy * NX;
+      for (var xx = 0; xx < NX; xx++) {
+        var sx = xx - ex;
+        if (sx < 0) sx = 0; else if (sx >= NX) sx = NX - 1;
+        dst[rowD + xx] = src[rowS + sx];
+      }
+    }
+  }
+  var swap = f; f = ft; ft = swap;
+
+  /* тело: полное отражение назад, то есть прилипание */
+  for (var j = 0; j < N; j++) {
+    if (!solid[j]) continue;
+    for (var q5 = 0; q5 < 9; q5++) SCRATCH[q5] = f[q5][j];
+    for (var q6 = 0; q6 < 9; q6++) f[q6][j] = SCRATCH[OPP[q6]];
+    uxA[j] = 0; uyA[j] = 0;
+  }
+
+  /* короткий толчок сразу за телом, чтобы неустойчивости было за что зацепиться */
+  if (kick > 0) {
+    kick--;
+    for (var ky = CYL.y | 0; ky < (CYL.y | 0) + 5; ky++) {
+      for (var kx = (CYL.x | 0) + CYL.r + 1; kx < (CYL.x | 0) + CYL.r + 6; kx++) {
+        var ki = kx + ky * NX;
+        if (solid[ki]) continue;
+        for (var q9 = 0; q9 < 9; q9++) f[q9][ki] = feq(q9, rhoA[ki] || 1, uxA[ki], 0.012);
+      }
+    }
+  }
+
+  /* вход слева держим на набегающем потоке, справа просто выпускаем */
+  for (var y2 = 0; y2 < NY; y2++) {
+    var li = y2 * NX;
+    for (var q7 = 0; q7 < 9; q7++) f[q7][li] = feq(q7, 1, U0, 0);
+    var ri = NX - 1 + y2 * NX, ri2 = NX - 2 + y2 * NX;
+    for (var q8 = 0; q8 < 9; q8++) f[q8][ri] = f[q8][ri2];
+  }
+}
+
+function Obtekanie(){
+  var box = useRef(null);
+  if (!box.current) {
+    var cv = document.createElement('canvas'); cv.width = NX; cv.height = NY;
+    box.current = { re: 1, run: true, mode: 'dye',
+                    img: cv.getContext('2d').createImageData(NX, NY),
+                    off: cv, offctx: cv.getContext('2d'), steps: 0 };
+  }
+  var st = box.current;
+  var [ui, setUi] = useState({ re: 1, mode: 'dye' });
+
+  /* Из числа Рейнольдса — вязкость решётки, из неё время релаксации.
+     Ниже 0,51 схема теряет устойчивость, поэтому Re сверху ограничено. */
+  function tauOf(re){ return 3 * (U0 * 2 * CYL.r / re) + 0.5; }
+
+  function step(dt){
+    if (!st.run) return;
+    var tau = C.clamp(tauOf(st.re), 0.515, 12);
+    var n = st.re > 60 ? 5 : 3;
+    for (var s = 0; s < n; s++) { lbmStep(tau); st.steps++; }
+    moveDye(n);
+  }
+
+  function draw(ctx){
+    var FH = HGT - 46, sx = W / NX, sy = FH / NY;
+
+    if (st.mode === 'vort') {
+      /* завихрённость: чередование красного и синего и есть дорожка */
+      var d = st.img.data, scale = 26 * Math.min(1, 40 / Math.max(st.re, 8));
+      for (var y = 0; y < NY; y++) for (var x = 0; x < NX; x++) {
+        var i = x + y * NX, p = i * 4;
+        if (solid[i]) { d[p] = 18; d[p+1] = 34; d[p+2] = 40; d[p+3] = 255; continue; }
+        var xm = x > 0 ? i - 1 : i, xp = x < NX - 1 ? i + 1 : i;
+        var ym = y > 0 ? i - NX : i, yp = y < NY - 1 ? i + NX : i;
+        var w = (uyA[xp] - uyA[xm]) - (uxA[yp] - uxA[ym]);
+        var t = C.clamp(w * scale * 40, -1, 1);
+        d[p]     = 12 + (t > 0 ? t * 243 : 0) + (t < 0 ? -t * 40 : 0);
+        d[p + 1] = 22 + Math.abs(t) * 150;
+        d[p + 2] = 28 + (t < 0 ? -t * 210 : 0) + (t > 0 ? t * 60 : 0);
+        d[p + 3] = 255;
+      }
+      st.offctx.putImageData(st.img, 0, 0);
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(st.off, 0, 0, NX, NY, 0, 0, W, FH);
+    } else {
+      /* краска: струйки идут ровно с той скоростью, что в их точке */
+      ctx.fillStyle = '#050f13';
+      ctx.fillRect(0, 0, W, FH);
+      for (var k = 0; k < NP; k++) {
+        ctx.fillStyle = (prow[k] & 1) ? 'rgba(53,200,216,.85)' : 'rgba(255,180,84,.8)';
+        ctx.fillRect(px[k] * sx - 1.6, py[k] * sy - 1.6, 3.2, 3.2);
+      }
+    }
+
+    /* тело: заливкой, чтобы краска не читалась сквозь него */
+    ctx.beginPath();
+    ctx.ellipse(CYL.x * sx, CYL.y * sy, CYL.r * sx, CYL.r * sy, 0, 0, 6.283);
+    ctx.fillStyle = '#12262c'; ctx.fill();
+    ctx.strokeStyle = 'rgba(230,241,244,.75)'; ctx.lineWidth = 2; ctx.stroke();
+
+    C.label(ctx, 20, HGT - 16, 'поток идёт слева направо', 18, '#7c9399', 'left');
+    C.label(ctx, W - 20, HGT - 16,
+            st.re < 5 ? 'жидкость смыкается за телом, следа нет'
+          : st.re < 60 ? 'сзади завелись два вихря, но они стоят на месте'
+                       : 'вихри срываются по очереди: дорожка Кармана',
+            19, '#e6f1f4', 'right');
+  }
+
+  function setRe(v){ st.re = v; setUi({ re: v, mode: st.mode }); }
+  function setMode(m){ st.mode = m; setUi({ re: st.re, mode: m }); }
+
+  var ref = C.useStage(W, HGT, step, draw);
+  window.__demoState = st;
+  window.__lbm = { uxA: uxA, uyA: uyA, solid: solid, NX: NX, NY: NY,
+                   reset: reset, seedAll: seedAll, px: px, py: py, prow: prow, NP: NP,
+                   tauOf: function(re){ return 3 * (U0 * 2 * CYL.r / re) + 0.5; } };
+
+  return html`
+    <div class="demo">
+      <div class="controls">
+        <${C.Group} label="Режим:">
+          <${C.Btn} active=${ui.re < 5} onClick=${function(){ setRe(1); }}>Стокс<//>
+          <${C.Btn} active=${ui.re >= 5 && ui.re < 60} onClick=${function(){ setRe(35); }}>Отрыв<//>
+          <${C.Btn} active=${ui.re >= 60} action=${true}
+                    onClick=${function(){ setRe(160); }}>Дорожка Кармана<//>
+        <//>
+        <${C.Slider} label="Re:" min=${0.6} max=${250} step=${0.1} log=${true}
+                     value=${ui.re} onChange=${setRe}
+                     display=${ui.re < 10 ? ui.re.toFixed(1).replace('.', ',') : String(Math.round(ui.re))} />
+        <${C.Group}>
+          <${C.Btn} active=${ui.mode === 'dye'} onClick=${function(){ setMode('dye'); }}>Краска<//>
+          <${C.Btn} active=${ui.mode === 'vort'} onClick=${function(){ setMode('vort'); }}>Вихри<//>
+        <//>
+        <${C.Group}>
+          <${C.Btn} onClick=${function(){ reset(); seedAll(); }}>Сбросить<//>
+        <//>
+      </div>
+      <canvas class="stage" ref=${ref}></canvas>
+      <${C.Status} html=${ui.re < 5
+        ? 'Малое Re: жидкость плавно обтекает тело и смыкается за ним, никакого следа. Здесь и работает формула Стокса.'
+        : ui.re < 60
+          ? 'Сзади появились два стоячих вихря. Формула Стокса уже врёт, но течение всё ещё спокойное.'
+          : 'Вихри срываются то с одной стороны, то с другой. Это дорожка Кармана, и никакой формулой она не считается.'} />
+    </div>`;
+}
+
+C.mount(Obtekanie);
+</script>
+</body>
+</html>
