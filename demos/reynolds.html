@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="ru" class="turb">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Опыт Рейнольдса: краска в трубе</title>
+<link rel="stylesheet" href="../shared/demo.css">
+</head>
+<body>
+<div id="root"></div>
+
+<script src="../shared/vendor/react.production.min.js"></script>
+<script src="../shared/vendor/react-dom.production.min.js"></script>
+<script src="../shared/vendor/htm.js"></script>
+<script src="../shared/demo-core.js"></script>
+<script>
+'use strict';
+var C = window.DemoCore, html = C.html;
+var useRef = React.useRef, useState = React.useState;
+
+/* Опыт Рейнольдса, 1883. Тонкая струйка краски идёт по оси трубы прямой
+   ниточкой, и на критическом числе Рейнольдса вдруг рвётся и размывается.
+
+   ЭТО МОДЕЛЬ, А НЕ РАСЧЁТ, и это важно отличать от демки обтекания, где
+   внутри честный решатель. Переход к турбулентности в трубе — явление
+   существенно трёхмерное, на плоской сетке его не посчитать. Поэтому
+   здесь воспроизведена картина, а не выведена: возмущение растёт по
+   длине и насыщается на радиусе трубы, а точка срыва едет к входу с
+   ростом Re. Ровно та же честная схема, что у струи в акте 0.
+
+   Числа при этом настоящие и взяты из канона лекции: труба два
+   сантиметра, вода, критическое Re около 2300. Ниже двух тысяч ниточка
+   держится по всей длине; в полосе примерно от 2000 до 2800 идут перемежающиеся
+   вспышки (это реальная особенность перехода, «пробки» Рейнольдса, они
+   плывут по потоку); выше нитка рвётся почти сразу за иглой. */
+
+/* Пропорции под место на слайде: демка стоит одна и получает почти всю
+   высоту, а труба в кадре 300 px оставляла по краям пустую миллиметровку. */
+var W = 1180, HGT = 450;
+var PIPE = { x0: 60, x1: 1120, cy: 186, r: 94 };
+var NEEDLE = 150;
+var LEN_M = 0.25;                        /* столько метров трубы в кадре */
+var PXM = (PIPE.x1 - NEEDLE) / LEN_M;
+var D = 0.02, RHO = 1000, MU = 1e-3;     /* труба 2 см, вода */
+var RE_LOW = 2000, RE_HIGH = 2800;       /* полоса перемежаемости */
+
+function reOf(u){ return RHO * u * D / MU; }
+
+/* Где ниточка начинает рваться. Ниже RE_LOW — нигде, дальше точка срыва
+   едет к игле и при 3600 упирается в неё. */
+function breakX(re){
+  if (re < RE_LOW) return Infinity;
+  var f = C.clamp((3600 - re) / (3600 - RE_LOW), 0, 1);
+  return NEEDLE + f * (PIPE.x1 - NEEDLE) * 0.98;
+}
+
+function Reynolds(){
+  var st = useRef({ u: 0.06, parts: [], spawn: 0, t: 0 }).current;
+  var [ui, setUi] = useState({ u: 0.06 });
+
+  function step(dt){
+    st.t += dt;
+    var re = reOf(st.u), xb = breakX(re);
+    var v = st.u * PXM;
+
+    /* Выпуск привязан к пройденному пути, а не ко времени: иначе на
+       быстром потоке ниточка становится пунктиром из полутора сотен точек,
+       а на медленном сгущается в кляксу. Шаг по длине — полтора пикселя. */
+    st.spawn += v * dt;
+    while (st.spawn >= 1.4) {
+      st.spawn -= 1.4;
+      st.parts.push({ x: NEEDLE, y: 0, w: 0, seed: Math.random() * 6.283 });
+      if (st.parts.length > 1500) st.parts.shift();
+    }
+
+    for (var i = st.parts.length - 1; i >= 0; i--) {
+      var p = st.parts[i];
+      p.x += v * dt;
+      if (p.x > PIPE.x1) { st.parts.splice(i, 1); continue; }
+      if (p.x < xb) continue;
+
+      /* За точкой срыва возмущение растёт и насыщается на радиусе трубы.
+         Перемежаемость: в переходной полосе беспорядок включается не
+         сплошь, а пробками, которые плывут вместе с потоком. */
+      var grow = C.clamp((p.x - xb) / 190, 0, 1);
+      var puff = 1;
+      if (re < RE_HIGH) {
+        var ph = (p.x - v * st.t) * 0.012 + p.seed * 0.3;
+        puff = C.clamp(Math.sin(ph) * 1.6 + (re - RE_LOW) / (RE_HIGH - RE_LOW) * 1.4 - 0.2, 0, 1);
+      }
+      var amp = PIPE.r * 0.92 * grow * grow * puff;
+      p.w += (Math.random() - 0.5) * amp * 0.9 * dt * 60;
+      p.w = C.clamp(p.w, -PIPE.r * 0.92, PIPE.r * 0.92);
+      p.y = p.w * 0.6 +
+            amp * 0.5 * Math.sin(p.x * 0.055 + p.seed + st.t * 2.2) +
+            amp * 0.3 * Math.sin(p.x * 0.021 - st.t * 1.4 + p.seed * 2);
+      p.y = C.clamp(p.y, -PIPE.r * 0.93, PIPE.r * 0.93);
+    }
+  }
+
+  function num(v, d){ return v.toFixed(d).replace('.', ','); }
+
+  function draw(ctx){
+    var re = reOf(st.u), xb = breakX(re), cy = PIPE.cy;
+
+    /* труба */
+    ctx.fillStyle = 'rgba(53,200,216,.05)';
+    ctx.fillRect(PIPE.x0, cy - PIPE.r, PIPE.x1 - PIPE.x0, PIPE.r * 2);
+    ctx.strokeStyle = 'rgba(230,241,244,.34)'; ctx.lineWidth = 2.4;
+    [-1, 1].forEach(function (s) {
+      ctx.beginPath();
+      ctx.moveTo(PIPE.x0, cy + s * PIPE.r); ctx.lineTo(PIPE.x1, cy + s * PIPE.r);
+      ctx.stroke();
+    });
+
+    /* игла с краской */
+    ctx.strokeStyle = '#7c9399'; ctx.lineWidth = 3; ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(PIPE.x0 + 6, cy - PIPE.r - 26); ctx.lineTo(NEEDLE - 4, cy - 5);
+    ctx.stroke();
+    C.label(ctx, PIPE.x0 + 4, cy - PIPE.r - 36, 'краска', 18, '#7c9399', 'left');
+
+    /* сама струйка */
+    st.parts.forEach(function (p) {
+      ctx.beginPath();
+      ctx.arc(p.x, cy + p.y, 2.4, 0, 6.283);
+      ctx.fillStyle = 'rgba(255,180,84,.9)';
+      ctx.fill();
+    });
+
+    /* отметка, где рвётся */
+    if (isFinite(xb) && xb < PIPE.x1 - 10) {
+      ctx.save();
+      ctx.setLineDash([6, 8]);
+      ctx.strokeStyle = 'rgba(53,200,216,.55)'; ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(xb, cy - PIPE.r - 12); ctx.lineTo(xb, cy + PIPE.r + 12);
+      ctx.stroke();
+      ctx.restore();
+      C.label(ctx, xb, cy + PIPE.r + 32, 'здесь рвётся', 18, '#35c8d8');
+    }
+
+    var verdict = re < RE_LOW ? 'ламинарно' : (re < RE_HIGH ? 'то рвётся, то нет' : 'турбулентно');
+    C.readout(ctx, 300, HGT - 58, 'СКОРОСТЬ', num(st.u, 3) + ' м/с', '#8fb2b8');
+    C.readout(ctx, 700, HGT - 58, 'ЧИСЛО РЕЙНОЛЬДСА', String(Math.round(re)),
+              re < RE_LOW ? '#35c8d8' : '#ffb454');
+    C.readout(ctx, 1120, HGT - 58, 'ЧТО В ТРУБЕ', verdict,
+              re < RE_LOW ? '#35c8d8' : '#ffb454');
+  }
+
+  var ref = C.useStage(W, HGT, step, draw);
+  window.__demoState = st;
+  window.__reynolds = { reOf: reOf, breakX: breakX, RE_LOW: RE_LOW, RE_HIGH: RE_HIGH };
+
+  function setU(v){ st.u = v; setUi({ u: v }); }
+
+  return html`
+    <div class="demo">
+      <div class="controls">
+        <${C.Slider} label="Скорость воды:" min=${0.04} max=${0.25} step=${0.002}
+                     value=${ui.u} onChange=${setU} display=${num(ui.u, 3) + ' м/с'} />
+        <${C.Group} label="Сразу к:">
+          <${C.Btn} onClick=${function(){ setU(0.06); }}>Спокойно<//>
+          <${C.Btn} action=${true} onClick=${function(){ setU(0.115); }}>Критическое<//>
+          <${C.Btn} onClick=${function(){ setU(0.22); }}>За порогом<//>
+        <//>
+      </div>
+      <canvas class="stage" ref=${ref}></canvas>
+      <${C.Status} html=${reOf(ui.u) < RE_LOW
+        ? 'Ниточка держится по всей трубе. Слои скользят друг по другу и не перемешиваются.'
+        : reOf(ui.u) < RE_HIGH
+          ? 'Порог. Ниточка рвётся не всегда: беспорядок идёт пробками, которые плывут по трубе.'
+          : 'Краска размывается почти сразу за иглой и заполняет трубу. Это турбулентность.'} />
+    </div>`;
+}
+
+C.mount(Reynolds);
+</script>
+</body>
+</html>
